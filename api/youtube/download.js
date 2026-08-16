@@ -7,6 +7,7 @@ import ffmpegPath from 'ffmpeg-static'
 import {
   byItagMap,
   resolveYouTubeConvert1s,
+  resolveYouTubeSsyou,
   resolveYouTubeYtmp4is,
   videoChoices,
   getYouTubeStreams,
@@ -168,8 +169,29 @@ export default async function handler(req, res) {
     }
   }
 
-  // ---- Fallback 2: convert1s — MP4 H.264 hasil konversi server-side.
-  //      Kompatibel semua pemutar (termasuk iPhone/iPad). ----
+  // ---- Fallback 2: ssyou.online — merge H.264+AAC di server mereka,
+  //      hasil MP4 H.264 muxed di CDN flashydl (kompatibel semua
+  //      perangkat; merge ~5-15 detik). ----
+  const ss = await resolveYouTubeSsyou(url, wantHeight)
+  if (ss?.downloadUrl) {
+    try {
+      const st = await fetch(ss.downloadUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      if (st.ok) {
+        const buf = Buffer.from(await st.arrayBuffer())
+        if (buf.length > 0) {
+          res.setHeader('Content-Type', 'video/mp4')
+          res.setHeader('Content-Length', String(buf.length))
+          res.setHeader('Content-Disposition', `attachment; filename="${safeTitle(ss.title || r.title)}.mp4"`)
+          res.end(buf)
+          return
+        }
+      }
+    } catch {
+      /* lanjut fallback berikutnya */
+    }
+  }
+
+  // ---- Fallback 3: convert1s — MP4 H.264 hasil konversi server-side. ----
   const q = ['2160p', '1440p', '1080p', '720p', '480p', '360p', '240p', '144p']
     .filter((x) => parseInt(x) <= Math.max(wantHeight, 144))
     .pop() || '360p'

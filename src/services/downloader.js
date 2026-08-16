@@ -265,20 +265,6 @@ export async function fetchYouTube(url) {
 
   const downloads = []
 
-  // 360p H.264 langsung dari googlevideo perangkat pengguna: IP rumahan
-  // selalu diizinkan Google, file progresif (video+audio) kompatibel semua
-  // perangkat termasuk iPhone/Android — jadi jangkar kalau konversi server
-  // gagal/AV1.
-  if (info.progressiveUrl) {
-    downloads.push({
-      label: 'MP4 · 360p (semua perangkat)',
-      url: info.progressiveUrl,
-      kind: 'video',
-      ext: 'mp4',
-      direct: true,
-    })
-  }
-
   const choices = info.videoChoices?.length
     ? info.videoChoices
     : [{ itag: '18', height: 360 }]
@@ -296,25 +282,13 @@ export async function fetchYouTube(url) {
     })
   })
 
-  // Audio langsung dari googlevideo perangkat pengguna (IP rumahan
-  // diizinkan; server Vercel diblokir). Cadangan: konversi server.
-  if (info.audioUrl) {
-    downloads.push({
-      label: 'Audio · M4A (semua perangkat)',
-      url: info.audioUrl,
-      kind: 'audio',
-      ext: 'm4a',
-      direct: true,
-    })
-  } else {
-    downloads.push({
-      label: 'MP3 · Audio (128kbps)',
-      url: `/api/youtube/download?url=${q}&format=mp3`,
-      kind: 'audio',
-      ext: 'mp3',
-      direct: true,
-    })
-  }
+  downloads.push({
+    label: 'MP3 · Audio (128kbps)',
+    url: `/api/youtube/download?url=${q}&format=mp3`,
+    kind: 'audio',
+    ext: 'mp3',
+    direct: true,
+  })
 
   return {
     platform: 'youtube',

@@ -227,13 +227,13 @@ export default function Hero() {
                 // tetap tidak ada, gambar/foto pertama dari daftar unduhan.
                 const videoFile = result.downloads.find((d) => d.kind === 'video')
                 const imageFile = result.downloads.find((d) => d.kind === 'image')
-                const previewUrl = (f) => (f.raw ? f.raw : (f.url && f.url.startsWith('/api/stream?') ? `${f.url}&preview=1` : f.url))
+                const previewUrl = (f) => (f.url && f.url.startsWith('/api/stream?') ? `${f.url}&preview=1` : f.url)
 
                 if (videoFile) {
                   return (
                     <div className="result-thumb">
                       <video
-                        src={previewUrl(videoFile)}
+                        src={previewUrl(videoFile.url)}
                         poster={result.thumbnail || undefined}
                         muted
                         loop
@@ -250,7 +250,7 @@ export default function Hero() {
                   return (
                     <div className="result-thumb">
                       <img
-                        src={result.thumbnail || previewUrl(imageFile)}
+                        src={result.thumbnail || previewUrl(imageFile.url)}
                         alt=""
                         loading="lazy"
                         referrerPolicy="no-referrer"
@@ -315,7 +315,7 @@ export default function Hero() {
                             <div key={idx} className="slide-card">
                               <div className="slide-preview">
                                 <img
-                                  src={previewUrl(f)}
+                                  src={previewUrl(f.url)}
                                   alt={f.label}
                                   loading="lazy"
                                   referrerPolicy="no-referrer"

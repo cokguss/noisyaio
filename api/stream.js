@@ -1,11 +1,38 @@
 import { isStreamAllowedHost, STREAM_HOST_HEADERS } from '../serverlib/shared.js'
 
+// Cache media kecil (<=8MB, TTL 10 menit): preview di kartu hasil dan
+// unduhan memakai byte yang sama, sehingga token URL sekali-pakai di CDN
+// (snapcdn/savetube-style) tidak "habis" dimakan preview.
+const mediaCache = new Map()
+const MEDIA_CACHE_TTL = 10 * 60 * 1000
+const MEDIA_CACHE_MAX = 8 * 1024 * 1024
+
+function cacheGet(key) {
+  const e = mediaCache.get(key)
+  if (!e) return null
+  if (Date.now() - e.at > MEDIA_CACHE_TTL) { mediaCache.delete(key); return null }
+  return e
+}
+
+function cacheSet(key, buf, type) {
+  if (!buf || buf.length > MEDIA_CACHE_MAX) return
+  if (mediaCache.size > 60) mediaCache.clear()
+  mediaCache.set(key, { buf, type, at: Date.now() })
+}
+
+function serveMedia(res, entry, name, preview) {
+  res.setHeader('Content-Type', entry.type || 'application/octet-stream')
+  res.setHeader('Content-Length', String(entry.buf.length))
+  if (!preview) res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
+  res.setHeader('Cache-Control', 'no-store')
+  res.end(entry.buf)
+}
+
 /**
- * GET /api/stream?url=...&filename=...
- * Proxy unduhan untuk CDN tanpa CORS (snapcdn utk Twitter, ssscdn utk
- * Facebook). Body diteruskan sebagai response STREAMING per-chunk —
- * response serverless yang di-bufer dibatasi ~4.5 MB dan di atas itu
- * dikosongkan (file 0 byte).
+ * GET /api/stream?url=...&filename=...[&preview=1]
+ * Proxy unduhan/preview untuk CDN tanpa CORS (snapcdn, ssscdn, tikwm,
+ * tiktokcdn, fbcdn, dl.tiktokio, dl.snapcdn). Media <=8MB di-cache agar
+ * preview + unduhan tidak berebut token sekali pakai.
  */
 export default async function handler(req, res) {
   const target = String(req.query.url || '')
@@ -18,6 +45,12 @@ export default async function handler(req, res) {
   if (!isStreamAllowedHost(host)) {
     return res.status(403).json({ error: 'Host tidak diizinkan' })
   }
+
+  const preview = req.query.preview === '1'
+  const name = String(req.query.filename || 'download').replace(/[^\w.\-()]/g, '_')
+
+  const hit = cacheGet(target)
+  if (hit) return serveMedia(res, hit, name, preview)
 
   try {
     // Coba 2x — CDN sesekali menolak sesaat (rate limit transien).
@@ -32,24 +65,12 @@ export default async function handler(req, res) {
     }
 
     const type = upstream.headers.get('content-type') || 'application/octet-stream'
-    const len = upstream.headers.get('content-length')
-    const name = String(req.query.filename || 'download').replace(/[^\w.\-()]/g, '_')
-
-    res.setHeader('Content-Type', type)
-    if (len) res.setHeader('Content-Length', len)
-    // Mode preview (diputar di kartu hasil): inline tanpa paksa-unduh.
-    if (req.query.preview !== '1') {
-      res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
+    const buf = Buffer.from(await upstream.arrayBuffer())
+    if (buf.length === 0) {
+      return res.status(502).json({ error: 'File sumber kosong' })
     }
-    res.setHeader('Cache-Control', 'no-store')
-
-    const reader = upstream.body.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      res.write(Buffer.from(value))
-    }
-    res.end()
+    cacheSet(target, buf, type)
+    serveMedia(res, { buf, type }, name, preview)
   } catch {
     if (!res.headersSent) res.status(502).json({ error: 'Gagal men-stream file' })
     else res.end()

@@ -12,6 +12,7 @@ import {
   fetchStreamFast,
   safeTitle,
   resolveYouTubeConvert1s,
+  resolveYouTubeSsyou,
   resolveYouTubeYtmp4is,
   resolveTikTok,
   canonicalTikTokUrl,
@@ -223,6 +224,23 @@ app.get('/api/youtube/download', async (req, res) => {
   } catch (err) {
     if (tmp) await rm(tmp, { recursive: true, force: true }).catch(() => {})
     console.error('download error:', err.message)
+    // Fallback serverless-style: ssyou merge H.264 → convert1s → savetube.
+    try {
+      const ss = await resolveYouTubeSsyou(url, wantHeight)
+      if (ss?.downloadUrl) {
+        const st = await fetch(ss.downloadUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        if (st.ok) {
+          const buf = Buffer.from(await st.arrayBuffer())
+          if (buf.length > 0) {
+            res.setHeader('Content-Type', 'video/mp4')
+            res.setHeader('Content-Length', String(buf.length))
+            res.setHeader('Content-Disposition', `attachment; filename="${safeTitle(ss.title)}.mp4"`)
+            res.end(buf)
+            return
+          }
+        }
+      }
+    } catch {}
     if (!res.headersSent) res.status(502).json({ error: 'Gagal mengunduh stream' })
     else res.end()
   }
@@ -232,6 +250,30 @@ app.get('/api/youtube/download', async (req, res) => {
  * Proxy unduhan generik untuk CDN tanpa CORS (mis. snapcdn untuk Twitter,
  * ssscdn untuk Facebook). Meneruskan Content-Length agar progress bar akurat.
  */
+// Cache media kecil (<=8MB): preview & unduhan berbagi byte (token
+// sekali pakai tidak habis dimakan preview).
+const mediaCache = new Map()
+const MEDIA_CACHE_TTL = 10 * 60 * 1000
+const MEDIA_CACHE_MAX = 8 * 1024 * 1024
+function cacheGet(k) {
+  const e = mediaCache.get(k)
+  if (!e) return null
+  if (Date.now() - e.at > MEDIA_CACHE_TTL) { mediaCache.delete(k); return null }
+  return e
+}
+function cacheSet(k, buf, type) {
+  if (!buf || buf.length > MEDIA_CACHE_MAX) return
+  if (mediaCache.size > 60) mediaCache.clear()
+  mediaCache.set(k, { buf, type, at: Date.now() })
+}
+function serveMedia(res, e, name, preview) {
+  res.setHeader('Content-Type', e.type || 'application/octet-stream')
+  res.setHeader('Content-Length', String(e.buf.length))
+  if (!preview) res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
+  res.setHeader('Cache-Control', 'no-store')
+  res.end(e.buf)
+}
+
 app.get('/api/stream', async (req, res) => {
   const target = String(req.query.url || '')
   let host
@@ -243,6 +285,12 @@ app.get('/api/stream', async (req, res) => {
   if (!isStreamAllowedHost(host)) {
     return res.status(403).json({ error: 'Host tidak diizinkan' })
   }
+
+  const preview = req.query.preview === '1'
+  const name = String(req.query.filename || 'download').replace(/[^\w.\-()]/g, '_')
+
+  const hit = cacheGet(target)
+  if (hit) return serveMedia(res, hit, name, preview)
 
   try {
     // Coba 2x — CDN sesekali menolak sesaat (rate limit transien).
@@ -256,20 +304,13 @@ app.get('/api/stream', async (req, res) => {
       return res.status(502).json({ error: `Gagal mengambil file (HTTP ${upstream.status})` })
     }
 
-    const len = upstream.headers.get('content-length')
     const type = upstream.headers.get('content-type') || 'application/octet-stream'
-    const name = String(req.query.filename || 'download').replace(/[^\w.\-()]/g, '_')
-    res.setHeader('Content-Type', type)
-    if (len) res.setHeader('Content-Length', len)
-    // Mode preview (diputar di kartu hasil): inline tanpa paksa-unduh.
-    if (req.query.preview !== '1') {
-      res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
+    const buf = Buffer.from(await upstream.arrayBuffer())
+    if (buf.length === 0) {
+      return res.status(502).json({ error: 'File sumber kosong' })
     }
-    res.setHeader('Cache-Control', 'no-store')
-
-    const nodeStream = Readable.fromWeb(upstream.body)
-    nodeStream.pipe(res)
-    req.on('close', () => nodeStream.destroy())
+    cacheSet(target, buf, type)
+    serveMedia(res, { buf, type }, name, preview)
   } catch {
     if (!res.headersSent) res.status(502).json({ error: 'Gagal men-stream file' })
     else res.end()

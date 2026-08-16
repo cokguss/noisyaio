@@ -144,6 +144,97 @@ function safeTitle(name) {
 }
 
 /**
+ * Resolver YouTube via ssyou.online (ssyoutube) — merge video H.264 +
+ * audio AAC di server mereka, hasil MP4 H.264 muxed di CDN flashydl:
+ * kompatibel semua perangkat (iPhone/Android/WMP). Merge ~5-15 detik.
+ * Return { downloadUrl, title } atau null.
+ */
+async function resolveYouTubeSsyou(url, wantHeight = 720) {
+  try {
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Origin': 'https://ssyou.online',
+      'Referer': 'https://ssyou.online/en12/',
+    }
+    const r = await fetch('https://ssyou.online/yt-video-detail/', {
+      method: 'POST',
+      headers,
+      body: new URLSearchParams({ videoURL: url }).toString(),
+    })
+    const html = await r.text()
+
+    const fm = html.match(/let cachedFormatUrls = ({[\s\S]*?});/)
+    const videoId = (html.match(/name="video_id" value="([^"]+)"/) || [])[1]
+    const nonce = (html.match(/'X-WP-Nonce':\s*'([^']+)'/) || [])[1]
+    const audioUrl = (html.match(/(?:let|const|var)\s+audioUrl\s*=\s*'([^']+)'/) || [])[1]
+    if (!fm || !videoId || !nonce || !audioUrl) return null
+
+    const formats = {}
+    const urlRegex = /'([^']+)'\s*:\s*'([^']+)'/g
+    let m
+    while ((m = urlRegex.exec(fm[1])) !== null) formats[m[1]] = m[2]
+
+    // Pilih kualitas terdekat <= yang diminta (atau terkecil).
+    const heights = Object.keys(formats)
+      .map((k) => parseInt(k, 10))
+      .filter((n) => !Number.isNaN(n))
+      .sort((a, b) => b - a)
+    if (!heights.length) return null
+    const pick = heights.find((h) => h <= wantHeight) || heights[heights.length - 1]
+    const resKey = pick + 'p'
+
+    const serverReq = await fetch('https://fpa-balancer.flashydl.space/get-server')
+    const wsHost = (await serverReq.text()).trim()
+
+    const renderId = `${videoId}_${resKey}`
+    const mergeData = {
+      id: renderId,
+      ttl: 3600000,
+      inputs: [
+        { url: formats[resKey], ext: 'mp4', chunkDownload: { type: 'header', size: 52428800, concurrency: 3 } },
+        { url: audioUrl, ext: 'm4a' },
+      ],
+      output: { ext: 'mp4', downloadName: 'noisy.mp4', chunkUpload: { size: 209715200, concurrency: 3 } },
+      operation: { type: 'replace_audio_in_video' },
+    }
+    const ajaxHeaders = { ...headers, Accept: 'application/json, text/javascript, */*; q=0.01', 'x-wp-nonce': nonce }
+    await fetch('https://ssyou.online/wp-admin/admin-ajax.php', {
+      method: 'POST',
+      headers: ajaxHeaders,
+      body: new URLSearchParams({ action: 'process_video_merge', nonce, request_data: JSON.stringify(mergeData) }).toString(),
+    })
+
+    const outUrl = await new Promise((resolve) => {
+      const ws = new WebSocket('wss://' + wsHost + '/pub/render/status_ws/' + renderId)
+      const to = setTimeout(() => { try { ws.close() } catch {} ; resolve(null) }, 40000)
+      ws.onmessage = (ev) => {
+        try {
+          const d = JSON.parse(ev.data)
+          if (d.status === 'done' && d.output) { clearTimeout(to); ws.close(); resolve(d.output.url) }
+          else if (d.error) { clearTimeout(to); ws.close(); resolve(null) }
+        } catch {}
+      }
+      ws.onerror = () => {}
+    })
+    if (!outUrl) return null
+
+    const pr = await fetch('https://ssyou.online/wp-admin/admin-ajax.php', {
+      method: 'POST',
+      headers: ajaxHeaders,
+      body: new URLSearchParams({ action: 'wp_get_proxied_url', targetUrl: outUrl }).toString(),
+    })
+    const pj = await pr.json().catch(() => null)
+    const finalUrl = pj?.data?.proxiedUrl || outUrl
+
+    const title = (html.match(/videoTitle[^>]*>\s*(.*?)\s*<\/div>/) || [])[1] || null
+    return { downloadUrl: finalUrl, title }
+  } catch {
+    return null
+  }
+}
+
+/**
  * Resolver YouTube via hub.convert1s.com (ssvid.cc) — hasil MP4 H.264
  * muxed hasil konversi server-side: kompatibel semua pemutar termasuk
  * iPhone/iPad, dan file dilayani tanpa blokir IP datacenter.
@@ -370,6 +461,7 @@ const STREAM_HOST_HEADERS = {
 }
 
 export {
+  resolveYouTubeSsyou,
   resolveYouTubeYtmp4is,
   ALLINONE,
   H264_ITAGS,
