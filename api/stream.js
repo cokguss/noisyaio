@@ -3,9 +3,9 @@ import { STREAM_ALLOWED_HOSTS, STREAM_HOST_HEADERS } from '../serverlib/shared.j
 /**
  * GET /api/stream?url=...&filename=...
  * Proxy unduhan untuk CDN tanpa CORS (snapcdn utk Twitter, ssscdn utk
- * Facebook). Di serverless, file di-buffer penuh dulu lalu dikirim utuh
- * dengan Content-Length — pipe langsung berisiko terpotong saat event
- * 'close' terpicu lebih awal oleh platform (hasil: file 0 byte).
+ * Facebook). Body diteruskan sebagai response STREAMING per-chunk —
+ * response serverless yang di-bufer dibatasi ~4.5 MB dan di atas itu
+ * dikosongkan (file 0 byte).
  */
 export default async function handler(req, res) {
   const target = String(req.query.url || '')
@@ -21,19 +21,26 @@ export default async function handler(req, res) {
 
   try {
     const upstream = await fetch(target, { headers: STREAM_HOST_HEADERS[host] || {} })
-    if (!upstream.ok) {
+    if (!upstream.ok || !upstream.body) {
       return res.status(502).json({ error: `Gagal mengambil file (HTTP ${upstream.status})` })
     }
 
     const type = upstream.headers.get('content-type') || 'application/octet-stream'
+    const len = upstream.headers.get('content-length')
     const name = String(req.query.filename || 'download').replace(/[^\w.\-()]/g, '_')
-    const buf = Buffer.from(await upstream.arrayBuffer())
 
     res.setHeader('Content-Type', type)
-    res.setHeader('Content-Length', String(buf.length))
+    if (len) res.setHeader('Content-Length', len)
     res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
     res.setHeader('Cache-Control', 'no-store')
-    res.end(buf)
+
+    const reader = upstream.body.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      res.write(Buffer.from(value))
+    }
+    res.end()
   } catch {
     if (!res.headersSent) res.status(502).json({ error: 'Gagal men-stream file' })
     else res.end()
