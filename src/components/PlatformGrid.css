@@ -1,0 +1,74 @@
+.section-head {
+  max-width: 640px;
+  margin-bottom: 54px;
+}
+
+.pf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 20px;
+}
+
+.pf-card {
+  position: relative;
+  padding: 30px 26px 26px;
+  overflow: hidden;
+  cursor: pointer;
+  transform: perspective(800px) rotateX(var(--rx, 0)) rotateY(var(--ry, 0));
+  transition: transform 0.2s ease, border-color 0.3s ease;
+  transform-style: preserve-3d;
+}
+
+.pf-card:hover {
+  border-color: color-mix(in srgb, var(--pc) 55%, transparent);
+}
+
+.pf-glow {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in srgb, var(--pc) 22%, transparent), transparent 60%);
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.pf-card:hover .pf-glow { opacity: 1; }
+
+.pf-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--pc);
+  margin-bottom: 20px;
+}
+
+.pf-card h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.pf-card p {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  font-family: var(--font-mono);
+}
+
+.pf-arrow {
+  position: absolute;
+  top: 28px;
+  right: 26px;
+  color: var(--text-faint);
+  font-size: 1.3rem;
+  transition: transform 0.25s ease, color 0.25s ease;
+}
+
+.pf-card:hover .pf-arrow {
+  transform: translate(4px, -4px);
+  color: var(--pc);
+}
