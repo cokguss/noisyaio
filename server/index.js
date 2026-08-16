@@ -272,8 +272,42 @@ function cacheSet(k, buf, type) {
   if (mediaCache.size > 60) mediaCache.clear()
   mediaCache.set(k, { buf, type, at: Date.now() })
 }
-function serveMedia(res, e, name, preview) {
-  res.setHeader('Content-Type', e.type || 'application/octet-stream')
+
+// Deteksi Content-Type dari byte file (magic numbers). CDN seperti
+// fastdl.muscdn mengirim "application/octet-stream" — elemen <video>
+// menolak MIME salah, jadi mode preview perlu tipe yang benar.
+function sniffType(buf, fallback) {
+  if (!buf || buf.length < 12) return fallback
+  if (buf.subarray(4, 8).toString() === 'ftyp') return 'video/mp4'
+  if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg'
+  if (buf[0] === 0x89 && buf[1] === 0x50) return 'image/png'
+  if (buf.subarray(0, 4).toString() === 'RIFF') return 'video/webm'
+  if (buf.subarray(0, 3).toString() === 'ID3' || (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0)) return 'audio/mpeg'
+  if (buf.subarray(0, 4).toString() === 'OggS') return 'audio/ogg'
+  return fallback
+}
+
+function serveMedia(req, res, e, name, preview) {
+  const type = preview ? sniffType(e.buf, e.type) : (e.type || 'application/octet-stream')
+  res.setHeader('Content-Type', type)
+  res.setHeader('Accept-Ranges', 'bytes')
+  const range = req.headers.range
+  if (range) {
+    const m = range.match(/bytes=(\d*)-(\d*)/)
+    if (m) {
+      const start = m[1] ? parseInt(m[1], 10) : 0
+      const end = m[2] ? Math.min(parseInt(m[2], 10), e.buf.length - 1) : e.buf.length - 1
+      if (start <= end) {
+        res.statusCode = 206
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${e.buf.length}`)
+        res.setHeader('Content-Length', String(end - start + 1))
+        if (!preview) res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(e.buf.subarray(start, end + 1))
+        return
+      }
+    }
+  }
   res.setHeader('Content-Length', String(e.buf.length))
   if (!preview) res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
   res.setHeader('Cache-Control', 'no-store')
@@ -296,7 +330,7 @@ app.get('/api/stream', async (req, res) => {
   const name = String(req.query.filename || 'download').replace(/[^\w.\-()]/g, '_')
 
   const hit = cacheGet(target)
-  if (hit) return serveMedia(res, hit, name, preview)
+  if (hit) return serveMedia(req, res, hit, name, preview)
 
   try {
     // Coba 2x — CDN sesekali menolak sesaat (rate limit transien).
@@ -316,7 +350,7 @@ app.get('/api/stream', async (req, res) => {
       return res.status(502).json({ error: 'File sumber kosong' })
     }
     cacheSet(target, buf, type)
-    serveMedia(res, { buf, type }, name, preview)
+    serveMedia(req, res, { buf, type }, name, preview)
   } catch {
     if (!res.headersSent) res.status(502).json({ error: 'Gagal men-stream file' })
     else res.end()
