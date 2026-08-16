@@ -141,7 +141,25 @@ function safeTitle(name) {
 }
 
 /** Host yang boleh di-stream via /api/stream + header wajib per host. */
-const STREAM_ALLOWED_HOSTS = new Set(['dl.snapcdn.app', 'ssscdn.io'])
+const STREAM_ALLOWED_EXACT = new Set([
+  'dl.snapcdn.app',   // Twitter
+  'ssscdn.io',        // Facebook
+  'tikwm.com',        // TikTok video (host polos tanpa subdomain)
+  'indown.io',        // Instagram (proxy foto igv2)
+])
+const STREAM_ALLOWED_SUFFIX = [
+  '.tikwm.com',          // TikTok video
+  '.fbcdn.net',          // Instagram video/foto CDN
+  '.cdninstagram.com',   // Instagram CDN (varian scontent)
+  '.indown.io',          // Instagram proxy foto (d3.indown.io dst.)
+]
+
+function isStreamAllowedHost(host) {
+  const h = (host || '').toLowerCase()
+  if (STREAM_ALLOWED_EXACT.has(h)) return true
+  return STREAM_ALLOWED_SUFFIX.some((s) => h.endsWith(s))
+}
+
 const STREAM_HOST_HEADERS = {
   'ssscdn.io': {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
@@ -162,6 +180,6 @@ export {
   fetchStreamFast,
   getSaveTubeVideo,
   safeTitle,
-  STREAM_ALLOWED_HOSTS,
+  isStreamAllowedHost,
   STREAM_HOST_HEADERS,
 }

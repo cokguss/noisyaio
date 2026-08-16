@@ -17,6 +17,13 @@ export function detectPlatform(url) {
 const SUPPORTED = ['tiktok', 'instagram', 'youtube', 'twitter', 'facebook']
 export const isSupported = (platform) => SUPPORTED.includes(platform)
 
+/**
+ * Bungkus URL media agar diunduh lewat proxy /api/stream kita.
+ * Sebagian CDN (tikwm, indown, fbcdn) menolak fetch lintas-origin dari
+ * browser — lewat proxy, unduhan menjadi paksa-unduh dengan progress.
+ */
+const proxyUrl = (url) => `/api/stream?url=${encodeURIComponent(url)}`
+
 /** Ubah "4.04 MB" / "512 KB" menjadi angka MB, atau null bila tak dikenali. */
 function parseSizeMb(size) {
   if (typeof size === 'number') return size
@@ -87,7 +94,7 @@ function normalizeAllInOne(r, platform) {
   videos.forEach((m) => {
     downloads.push({
       label: qualityLabel[m.quality] || 'MP4 · Video',
-      url: m.url,
+      url: proxyUrl(m.url),
       hd: m.quality === 'hd_no_watermark',
       kind: 'video',
       ext: 'mp4',
@@ -96,13 +103,13 @@ function normalizeAllInOne(r, platform) {
   images.forEach((m, i) => {
     downloads.push({
       label: images.length > 1 ? `Foto ${i + 1}` : 'Foto',
-      url: m.url,
+      url: proxyUrl(m.url),
       kind: 'image',
       ext: (m.extension === 'png' || m.extension === 'webp') ? m.extension : 'jpg',
     })
   })
   audios.forEach((m) => {
-    downloads.push({ label: 'MP3 · Audio', url: m.url, kind: 'audio', ext: 'mp3' })
+    downloads.push({ label: 'MP3 · Audio', url: proxyUrl(m.url), kind: 'audio', ext: 'mp3' })
   })
 
   return {
@@ -146,9 +153,9 @@ export async function fetchTikTok(url) {
             avatar: d.user?.avatar ?? null,
           },
           downloads: [
-            noWm.url && { label: 'MP4 · No watermark', url: noWm.url, sizeMb: noWm.size_mb, hd: !!noWm.hd, kind: 'video', ext: 'mp4' },
-            wm.url && { label: 'MP4 · Watermark', url: wm.url, sizeMb: wm.size_mb, hd: !!wm.hd, kind: 'video', ext: 'mp4' },
-            d.audio_url && { label: 'MP3 · Audio', url: d.audio_url, kind: 'audio', ext: 'mp3' },
+            noWm.url && { label: 'MP4 · No watermark', url: proxyUrl(noWm.url), sizeMb: noWm.size_mb, hd: !!noWm.hd, kind: 'video', ext: 'mp4' },
+            wm.url && { label: 'MP4 · Watermark', url: proxyUrl(wm.url), sizeMb: wm.size_mb, hd: !!wm.hd, kind: 'video', ext: 'mp4' },
+            d.audio_url && { label: 'MP3 · Audio', url: proxyUrl(d.audio_url), kind: 'audio', ext: 'mp3' },
           ].filter(Boolean),
         }
       }
@@ -186,7 +193,7 @@ export async function fetchInstagram(url) {
     const base = kind === 'image' ? 'Foto' : 'MP4 · Video'
     return {
       label: multiple ? `${base} ${i + 1}` : base,
-      url: item.url,
+      url: proxyUrl(item.url),
       sizeMb: parseSizeMb(item.size),
       kind,
       ext,

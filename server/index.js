@@ -13,7 +13,7 @@ import {
   safeTitle,
   AAC_ITAG,
   PROGRESSIVE_ITAG,
-  STREAM_ALLOWED_HOSTS,
+  isStreamAllowedHost,
   STREAM_HOST_HEADERS,
 } from '../serverlib/shared.js'
 
@@ -134,12 +134,18 @@ app.get('/api/stream', async (req, res) => {
   } catch {
     return res.status(400).json({ error: 'URL tidak valid' })
   }
-  if (!STREAM_ALLOWED_HOSTS.has(host)) {
+  if (!isStreamAllowedHost(host)) {
     return res.status(403).json({ error: 'Host tidak diizinkan' })
   }
 
   try {
-    const upstream = await fetch(target, { headers: STREAM_HOST_HEADERS[host] || {} })
+    // Coba 2x — CDN sesekali menolak sesaat (rate limit transien).
+    let upstream = null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      upstream = await fetch(target, { headers: STREAM_HOST_HEADERS[host] || {} })
+      if (upstream.ok) break
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 900))
+    }
     if (!upstream.ok || !upstream.body) {
       return res.status(502).json({ error: `Gagal mengambil file (HTTP ${upstream.status})` })
     }
