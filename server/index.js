@@ -97,7 +97,7 @@ app.get('/api/youtube/info', async (req, res) => {
     return res.status(400).json({ error: 'URL YouTube tidak valid' })
   }
 
-  const r = await getYouTubeStreams(url)
+  const r = await getYouTubeStreams(url, 2)
   if (!r) return res.status(502).json({ error: 'Gagal mengambil data dari sumber' })
 
   const byItag = byItagMap(r.medias)

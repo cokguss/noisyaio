@@ -283,39 +283,14 @@ export default function Hero() {
                   </div>
                 )}
 
-                {/* Slideshow TikTok: grid seluruh foto — klik foto untuk
-                    mengunduh satuan, atau tombol "unduh semua". */}
+                {/* Slideshow TikTok: kartu besar per foto, preview besar +
+                    tombol unduh di bawah tiap foto + unduh semua. */}
                 {(() => {
                   const photos = result.downloads.filter((d) => d.kind === 'image')
                   if (photos.length < 2) return null
                   const previewUrl = (u) => (u.startsWith('/api/stream?') ? `${u}&preview=1` : u)
                   return (
-                    <div className="slide-grid-wrap">
-                      <div className="slide-grid">
-                        {photos.map((f) => {
-                          const idx = result.downloads.indexOf(f)
-                          return (
-                            <button
-                              key={idx}
-                              type="button"
-                              className="slide-item"
-                              onClick={() => handleFileDownload(f, idx)}
-                              disabled={downloading !== null}
-                              title={f.label}
-                            >
-                              <img
-                                src={previewUrl(f.url)}
-                                alt={f.label}
-                                loading="lazy"
-                                referrerPolicy="no-referrer"
-                                onError={(e) => { e.currentTarget.parentElement.style.visibility = 'hidden' }}
-                              />
-                              <span className="slide-num">{idx + 1}</span>
-                              {downloading === idx && <span className="slide-loading"><span className="spinner" /></span>}
-                            </button>
-                          )
-                        })}
-                      </div>
+                    <div className="slide-list-wrap">
                       <button
                         type="button"
                         className="result-dl slide-download-all"
@@ -327,9 +302,53 @@ export default function Hero() {
                             stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
                           </svg>
-                          <span className="result-dl-label">{t.hero.result.downloadAll} ({photos.length})</span>
+                          <span className="result-dl-label">{t.hero.result.downloadAll} ({photos.length} foto)</span>
                         </span>
                       </button>
+
+                      <div className="slide-list">
+                        {photos.map((f) => {
+                          const idx = result.downloads.indexOf(f)
+                          const active = downloading === idx
+                          const indeterminate = active && progress === -1
+                          return (
+                            <div key={idx} className="slide-card">
+                              <div className="slide-preview">
+                                <img
+                                  src={previewUrl(f.url)}
+                                  alt={f.label}
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }}
+                                />
+                                <span className="slide-num">{idx + 1} / {photos.length}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className={`result-dl slide-dl-btn ${active ? 'is-downloading' : ''}`}
+                                onClick={() => handleFileDownload(f, idx)}
+                                disabled={downloading !== null}
+                              >
+                                {active && (
+                                  <span
+                                    className={`result-dl-progress ${indeterminate ? 'is-indeterminate' : ''}`}
+                                    style={indeterminate ? undefined : { width: `${progress}%` }}
+                                  />
+                                )}
+                                <span className="result-dl-content">
+                                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+                                  </svg>
+                                  <span className="result-dl-label">
+                                    {active ? t.hero.processing : f.label}
+                                  </span>
+                                </span>
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   )
                 })()}

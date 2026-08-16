@@ -52,11 +52,11 @@ function videoChoices(byItag) {
 const streamCache = new Map()
 const CACHE_TTL = 5 * 60 * 1000
 
-async function getYouTubeStreams(url) {
+async function getYouTubeStreams(url, tries = 4) {
   const cached = streamCache.get(url)
   if (cached && cached.expires > Date.now()) return cached.data
 
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < tries; i++) {
     try {
       const res = await fetch(`${ALLINONE}?url=${encodeURIComponent(url)}`)
       if (res.ok) {
@@ -168,7 +168,7 @@ async function resolveYouTubeConvert1s(url, { audio = false, quality = '720p' } 
     const init = await initRes.json()
     if (!init?.statusUrl) return null
 
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 24; i++) {
       await new Promise((r) => setTimeout(r, 1500))
       const st = await (await fetch(init.statusUrl, { headers })).json()
       if (st.status === 'completed' && st.downloadUrl) {
