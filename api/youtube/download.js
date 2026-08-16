@@ -1,0 +1,87 @@
+import { spawn } from 'node:child_process'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import ffmpegPath from 'ffmpeg-static'
+import {
+  byItagMap,
+  videoChoices,
+  getYouTubeStreams,
+  fetchStreamFast,
+  safeTitle,
+  AAC_ITAG,
+  PROGRESSIVE_ITAG,
+} from '../../serverlib/shared.js'
+
+/**
+ * GET /api/youtube/download?url=...&height=720
+ * Ambil video H.264 + audio AAC per-potongan paralel (anti-throttle),
+ * remux lokal via ffmpeg tanpa re-encode, lalu stream ke klien.
+ */
+export default async function handler(req, res) {
+  const url = String(req.query.url || '')
+  const wantHeight = parseInt(String(req.query.height || '720'), 10)
+  if (!/youtube\.com|youtu\.be/i.test(url)) {
+    return res.status(400).json({ error: 'URL YouTube tidak valid' })
+  }
+
+  const r = await getYouTubeStreams(url)
+  if (!r) return res.status(502).json({ error: 'Gagal mengambil data dari sumber' })
+
+  const byItag = byItagMap(r.medias)
+  const ranked = videoChoices(byItag)
+  const pick = ranked.find((x) => x.h <= wantHeight) || ranked[ranked.length - 1]
+  const audio = byItag[AAC_ITAG]
+
+  let tmp
+  try {
+    tmp = await mkdtemp(join(tmpdir(), 'noisy-yt-'))
+
+    let inputs
+    if (pick && audio) {
+      const [vBuf, aBuf] = await Promise.all([
+        fetchStreamFast(byItag[pick.itag].url),
+        fetchStreamFast(audio.url),
+      ])
+      const vPath = join(tmp, 'v.mp4')
+      const aPath = join(tmp, 'a.m4a')
+      await Promise.all([writeFile(vPath, vBuf), writeFile(aPath, aBuf)])
+      inputs = ['-i', vPath, '-i', aPath, '-map', '0:v:0', '-map', '1:a:0']
+    } else if (byItag[PROGRESSIVE_ITAG]) {
+      const pBuf = await fetchStreamFast(byItag[PROGRESSIVE_ITAG].url)
+      const pPath = join(tmp, 'p.mp4')
+      await writeFile(pPath, pBuf)
+      inputs = ['-i', pPath]
+    } else {
+      await rm(tmp, { recursive: true, force: true })
+      return res.status(422).json({ error: 'Tidak ada format H.264 yang tersedia' })
+    }
+
+    res.setHeader('Content-Type', 'video/mp4')
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTitle(r.title)}.mp4"`)
+
+    const args = [
+      '-hide_banner', '-loglevel', 'error',
+      ...inputs,
+      '-c', 'copy',
+      '-movflags', 'frag_keyframe+empty_moov+faststart',
+      '-f', 'mp4', 'pipe:1',
+    ]
+    const ff = spawn(ffmpegPath, args)
+    ff.stdout.pipe(res)
+
+    ff.on('error', () => { if (!res.headersSent) res.status(500).end(); else res.end() })
+    ff.on('close', (code) => {
+      if (code !== 0 && !res.writableEnded) res.end()
+      rm(tmp, { recursive: true, force: true }).catch(() => {})
+    })
+    res.on('close', () => {
+      ff.kill('SIGKILL')
+      rm(tmp, { recursive: true, force: true }).catch(() => {})
+    })
+  } catch (err) {
+    if (tmp) await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    if (!res.headersSent) res.status(502).json({ error: 'Gagal mengunduh stream' })
+    else res.end()
+  }
+}
