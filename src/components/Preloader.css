@@ -1,0 +1,128 @@
+.preloader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(1000px circle at 50% 45%, rgba(168, 85, 247, 0.12), transparent 60%),
+    #08080c;
+  opacity: 1;
+  transition: opacity 0.6s ease, visibility 0.6s ease;
+}
+
+.preloader.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.pre-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+}
+
+.pre-label {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  letter-spacing: 0.55em;
+  text-indent: 0.55em;
+  color: #22d3ee;
+  opacity: 0.85;
+  animation: pre-flicker 2.4s infinite;
+}
+
+.pre-title {
+  position: relative;
+  font-size: clamp(2.2rem, 7vw, 4rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #f5f5fa;
+  margin: 0;
+  line-height: 1;
+}
+
+.pre-accent {
+  background: linear-gradient(90deg, #a855f7, #22d3ee, #ec4899);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Efek glitch: dua lapisan pseudo yang bergeser + clip acak */
+.glitch::before,
+.glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  background: #08080c;
+  overflow: hidden;
+}
+
+.glitch::before {
+  left: 2px;
+  text-shadow: -2px 0 #ec4899;
+  animation: glitch-a 2.6s infinite linear alternate-reverse;
+}
+
+.glitch::after {
+  left: -2px;
+  text-shadow: -2px 0 #22d3ee, 2px 2px #a855f7;
+  animation: glitch-b 2.1s infinite linear alternate-reverse;
+}
+
+@keyframes glitch-a {
+  0%   { clip-path: inset(0 0 85% 0); }
+  20%  { clip-path: inset(45% 0 40% 0); }
+  40%  { clip-path: inset(80% 0 5% 0); }
+  60%  { clip-path: inset(20% 0 60% 0); }
+  80%  { clip-path: inset(60% 0 20% 0); }
+  100% { clip-path: inset(10% 0 75% 0); }
+}
+
+@keyframes glitch-b {
+  0%   { clip-path: inset(70% 0 10% 0); }
+  25%  { clip-path: inset(15% 0 65% 0); }
+  50%  { clip-path: inset(50% 0 30% 0); }
+  75%  { clip-path: inset(30% 0 55% 0); }
+  100% { clip-path: inset(85% 0 5% 0); }
+}
+
+.pre-bar {
+  width: min(260px, 60vw);
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.pre-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22d3ee, #a855f7, #ec4899);
+  border-radius: 999px;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
+  transition: width 0.12s linear;
+}
+
+.pre-percent {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  color: var(--text-faint, #6b6b7b);
+}
+
+@keyframes pre-flicker {
+  0%, 100% { opacity: 0.85; }
+  48% { opacity: 0.85; }
+  50% { opacity: 0.3; }
+  52% { opacity: 0.85; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glitch::before, .glitch::after { animation: none; opacity: 0; }
+  .pre-label { animation: none; }
+}
