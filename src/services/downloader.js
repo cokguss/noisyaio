@@ -163,7 +163,9 @@ export async function fetchTikTok(url) {
       return {
         platform: 'tiktok',
         videoId: null,
-        thumbnail: r.images?.[0] || r.thumbnail || null,
+        thumbnail: r.type === 'image' && r.images?.[0]
+          ? `${proxyUrl(r.images[0])}&preview=1`
+          : (r.thumbnail || null),
         duration: null,
         author: { name: r.author || r.title || null, username: null, avatar: r.avatar || null },
         downloads,

@@ -45,6 +45,12 @@ app.get('/api/tiktok/resolve', async (req, res) => {
     resolveTikTokLibrary(canonical),
     getYouTubeStreams(url).catch(() => null),
   ])
+
+  // Thumbnail video dari all-in-one (library v3 tanpa cover).
+  if (lib && !lib.thumbnail && aio?.thumbnail) {
+    lib.thumbnail = aio.thumbnail
+  }
+
   const aioMedias = Array.isArray(aio?.medias) ? aio.medias : []
   const aioImages = aioMedias.filter((m) => m.type === 'image').map((m) => m.url).filter(Boolean)
   const aioAudio = (aioMedias.find((m) => m.type === 'audio') || {}).url || null
