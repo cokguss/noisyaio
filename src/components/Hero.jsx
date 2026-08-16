@@ -227,7 +227,10 @@ export default function Hero() {
                 // tetap tidak ada, gambar/foto pertama dari daftar unduhan.
                 const videoFile = result.downloads.find((d) => d.kind === 'video')
                 const imageFile = result.downloads.find((d) => d.kind === 'image')
-                const previewUrl = (f) => (f.url && f.url.startsWith('/api/stream?') ? `${f.url}&preview=1` : f.url)
+                const previewUrl = (u) => {
+                  const s = typeof u === 'string' ? u : (u?.url || '')
+                  return s.startsWith('/api/stream?') ? `${s}&preview=1` : s
+                }
 
                 if (videoFile) {
                   return (
