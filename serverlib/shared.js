@@ -199,6 +199,9 @@ const STREAM_ALLOWED_EXACT = new Set([
 ])
 const STREAM_ALLOWED_SUFFIX = [
   '.tikwm.com',          // TikTok video
+  '.tiktokio.com',       // TikTok (resolver utama)
+  '.tiktokcdn.com',      // TikTok CDN (foto slideshow, musik)
+  '.tiktokcdn-us.com',   // TikTok CDN (varian AS)
   '.fbcdn.net',          // Instagram video/foto CDN
   '.cdninstagram.com',   // Instagram CDN (varian scontent)
   '.indown.io',          // Instagram proxy foto (d3.indown.io dst.)
