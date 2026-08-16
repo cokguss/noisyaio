@@ -11,6 +11,7 @@ import {
   getYouTubeStreams,
   fetchStreamFast,
   safeTitle,
+  resolveYouTubeConvert1s,
   resolveTikTok,
   canonicalTikTokUrl,
   resolveTikTokLibrary,
@@ -121,6 +122,25 @@ app.get('/api/youtube/download', async (req, res) => {
   const wantHeight = parseInt(String(req.query.height || '720'), 10)
   if (!/youtube\.com|youtu\.be/i.test(url)) {
     return res.status(400).json({ error: 'URL YouTube tidak valid' })
+  }
+
+  // ---- MP3: konversi convert1s (audio 128k). ----
+  if (String(req.query.format || '') === 'mp3') {
+    const c1 = await resolveYouTubeConvert1s(url, { audio: true })
+    if (c1?.downloadUrl) {
+      const st = await fetch(c1.downloadUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      if (st.ok) {
+        const buf = Buffer.from(await st.arrayBuffer())
+        if (buf.length > 0) {
+          res.setHeader('Content-Type', 'audio/mpeg')
+          res.setHeader('Content-Length', String(buf.length))
+          res.setHeader('Content-Disposition', `attachment; filename="${safeTitle(c1.title)}.mp3"`)
+          res.end(buf)
+          return
+        }
+      }
+    }
+    return res.status(502).json({ error: 'Gagal mengonversi MP3' })
   }
 
   const r = await getYouTubeStreams(url)

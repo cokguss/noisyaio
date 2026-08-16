@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import ffmpegPath from 'ffmpeg-static'
 import {
   byItagMap,
+  resolveYouTubeConvert1s,
   videoChoices,
   getYouTubeStreams,
   fetchStreamFast,
@@ -66,6 +67,24 @@ export default async function handler(req, res) {
 
   const disposition = `attachment; filename="${safeTitle(r.title)}.mp4"`
   const ffBin = findFfmpeg()
+
+  // ---- MP3: konversi convert1s (H.264-free, cepat). ----
+  if (String(req.query.format || '') === 'mp3') {
+    const c1 = await resolveYouTubeConvert1s(url, { audio: true })
+    if (c1?.downloadUrl) {
+      const st = await fetch(c1.downloadUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      if (st.ok) {
+        const buf = Buffer.from(await st.arrayBuffer())
+        if (buf.length > 0) {
+          res.setHeader('Content-Type', 'audio/mpeg')
+          res.setHeader('Content-Disposition', `attachment; filename="${safeTitle(c1.title || r.title)}.mp3"`)
+          res.end(buf)
+          return
+        }
+      }
+    }
+    return res.status(502).json({ error: 'Gagal mengonversi MP3' })
+  }
 
   let tmp = null
   try {
@@ -133,8 +152,32 @@ export default async function handler(req, res) {
     }
   }
 
-  // ---- Fallback 2: savetube (server mereka menarik video; bebas blokir
-  //      IP googlevideo). Hasil muxed video+audio, codec AV1. ----
+  // ---- Fallback 2: convert1s — MP4 H.264 hasil konversi server-side.
+  //      Kompatibel semua pemutar (termasuk iPhone/iPad). ----
+  const q = ['2160p', '1440p', '1080p', '720p', '480p', '360p', '240p', '144p']
+    .filter((x) => parseInt(x) <= Math.max(wantHeight, 144))
+    .pop() || '360p'
+  const c1 = await resolveYouTubeConvert1s(url, { quality: q })
+  if (c1?.downloadUrl) {
+    try {
+      const st = await fetch(c1.downloadUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      if (st.ok) {
+        const buf = Buffer.from(await st.arrayBuffer())
+        if (buf.length > 0) {
+          res.setHeader('Content-Type', 'video/mp4')
+          res.setHeader('Content-Length', String(buf.length))
+          res.setHeader('Content-Disposition', `attachment; filename="${safeTitle(c1.title || r.title)}.mp4"`)
+          res.end(buf)
+          return
+        }
+      }
+    } catch {
+      /* lanjut savetube */
+    }
+  }
+
+  // ---- Fallback 3: savetube (muxed video+audio, codec AV1; tidak bisa
+  //      diputar di sebagian pemutar lawas). ----
   const stUrl = await getSaveTubeVideo(url)
   if (stUrl) {
     try {

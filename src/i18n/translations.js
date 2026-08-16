@@ -20,6 +20,8 @@ export const translations = {
       result: {
         by: 'oleh',
         downloadFile: 'Unduh',
+        downloadAll: 'Unduh semua foto',
+
         another: 'Unduh video lain',
         durationLabel: 'Durasi',
       },
@@ -140,6 +142,8 @@ export const translations = {
       result: {
         by: 'by',
         downloadFile: 'Download',
+        downloadAll: 'Download all photos',
+
         another: 'Download another video',
         durationLabel: 'Duration',
       },

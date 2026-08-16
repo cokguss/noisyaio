@@ -77,6 +77,28 @@ export default function Hero() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const handleDownloadAllPhotos = async () => {
+    if (downloading !== null) return
+    const photos = result.downloads.map((f, i) => ({ f, i })).filter((x) => x.f.kind === 'image')
+    for (const { f, i } of photos) {
+      setDownloading(i)
+      setProgress(0)
+      const base = result?.author?.username || result?.videoId || 'noisy-aio'
+      const filename = `${base}-foto-${i + 1}.${f.ext}`
+      try {
+        await downloadFile(f.url, filename, (ratio) => {
+          setProgress(ratio < 0 ? -1 : Math.round(ratio * 100))
+        })
+        // beri jeda agar browser tidak memblokir unduhan beruntun
+        await new Promise((r) => setTimeout(r, 500))
+      } catch {
+        /* lanjut foto berikutnya */
+      }
+    }
+    setDownloading(null)
+    setProgress(0)
+  }
+
   const reset = () => {
     setResult(null)
     setState(STATES.IDLE)
@@ -261,8 +283,60 @@ export default function Hero() {
                   </div>
                 )}
 
+                {/* Slideshow TikTok: grid seluruh foto — klik foto untuk
+                    mengunduh satuan, atau tombol "unduh semua". */}
+                {(() => {
+                  const photos = result.downloads.filter((d) => d.kind === 'image')
+                  if (photos.length < 2) return null
+                  const previewUrl = (u) => (u.startsWith('/api/stream?') ? `${u}&preview=1` : u)
+                  return (
+                    <div className="slide-grid-wrap">
+                      <div className="slide-grid">
+                        {photos.map((f) => {
+                          const idx = result.downloads.indexOf(f)
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              className="slide-item"
+                              onClick={() => handleFileDownload(f, idx)}
+                              disabled={downloading !== null}
+                              title={f.label}
+                            >
+                              <img
+                                src={previewUrl(f.url)}
+                                alt={f.label}
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                onError={(e) => { e.currentTarget.parentElement.style.visibility = 'hidden' }}
+                              />
+                              <span className="slide-num">{idx + 1}</span>
+                              {downloading === idx && <span className="slide-loading"><span className="spinner" /></span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        className="result-dl slide-download-all"
+                        onClick={handleDownloadAllPhotos}
+                        disabled={downloading !== null}
+                      >
+                        <span className="result-dl-content">
+                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+                          </svg>
+                          <span className="result-dl-label">{t.hero.result.downloadAll} ({photos.length})</span>
+                        </span>
+                      </button>
+                    </div>
+                  )
+                })()}
+
                 <div className="result-actions">
-                  {result.downloads.map((f, i) => {
+                  {result.downloads.filter((d) => d.kind !== 'image').map((f) => {
+                    const i = result.downloads.indexOf(f)
                     const active = downloading === i
                     const indeterminate = active && progress === -1
                     return (

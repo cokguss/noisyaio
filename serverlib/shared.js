@@ -143,6 +143,45 @@ function safeTitle(name) {
     .slice(0, 80) || 'youtube'
 }
 
+/**
+ * Resolver YouTube via hub.convert1s.com (ssvid.cc) — hasil MP4 H.264
+ * muxed hasil konversi server-side: kompatibel semua pemutar termasuk
+ * iPhone/iPad, dan file dilayani tanpa blokir IP datacenter.
+ * Return { downloadUrl, title } atau null.
+ */
+async function resolveYouTubeConvert1s(url, { audio = false, quality = '720p' } = {}) {
+  try {
+    const headers = {
+      'accept': 'application/json',
+      'content-type': 'application/json',
+      'origin': 'https://ssvid.cc',
+      'referer': 'https://ssvid.cc/',
+      'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+    }
+    const payload = audio
+      ? { url, audio: { bitrate: '128k' }, output: { type: 'audio', format: 'mp3' } }
+      : { url, video: { quality, codec: 'h264' }, output: { type: 'video', format: 'mp4' } }
+
+    const initRes = await fetch('https://hub.convert1s.com/api/download', {
+      method: 'POST', headers, body: JSON.stringify(payload),
+    })
+    const init = await initRes.json()
+    if (!init?.statusUrl) return null
+
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1500))
+      const st = await (await fetch(init.statusUrl, { headers })).json()
+      if (st.status === 'completed' && st.downloadUrl) {
+        return { downloadUrl: st.downloadUrl, title: init.title || st.title || null }
+      }
+      if (st.status === 'error') return null
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 /** Pecahkan link pendek vt.tiktok.com menjadi URL kanonik (path /photo/ terlihat). */
 async function canonicalTikTokUrl(url) {
   try {
@@ -311,6 +350,7 @@ export {
   getYouTubeStreams,
   fetchStreamFast,
   getSaveTubeVideo,
+  resolveYouTubeConvert1s,
   resolveTikTok,
   canonicalTikTokUrl,
   resolveTikTokLibrary,
