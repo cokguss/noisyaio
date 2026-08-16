@@ -3,9 +3,6 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "outputFileTracingIncludes": {
-    "api/youtube/download.js": ["./node_modules/ffmpeg-static/ffmpeg"]
-  },
   "rewrites": [
     { "source": "/terms", "destination": "/" },
     { "source": "/privacy", "destination": "/" },

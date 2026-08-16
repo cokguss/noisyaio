@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,9 +15,25 @@ import {
 } from '../../serverlib/shared.js'
 
 /**
+ * Cari binary ffmpeg. Di serverless, file tracing kadang tidak ikut
+ * menyertakan binary ffmpeg-static — kalau tidak ditemukan, kita fallback
+ * ke mode tanpa-remux (stream langsung itag 18: H.264+AAC 360p yang sudah
+ * tergabung) supaya unduhan tetap berhasil.
+ */
+function findFfmpeg() {
+  const candidates = [
+    ffmpegPath,
+    join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+    join(process.cwd(), 'api', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p)) || null
+}
+
+/**
  * GET /api/youtube/download?url=...&height=720
  * Ambil video H.264 + audio AAC per-potongan paralel (anti-throttle),
  * remux lokal via ffmpeg tanpa re-encode, lalu stream ke klien.
+ * Bila ffmpeg tak tersedia: kirim itag 18 (progressive H.264+AAC) utuh.
  */
 export default async function handler(req, res) {
   const url = String(req.query.url || '')
@@ -32,6 +49,21 @@ export default async function handler(req, res) {
   const ranked = videoChoices(byItag)
   const pick = ranked.find((x) => x.h <= wantHeight) || ranked[ranked.length - 1]
   const audio = byItag[AAC_ITAG]
+
+  const disposition = `attachment; filename="${safeTitle(r.title)}.mp4"`
+
+  // ---- Mode fallback tanpa ffmpeg: kirim progressive itag 18 langsung. ----
+  const ffBin = findFfmpeg()
+  if (!ffBin) {
+    const prog = byItag[PROGRESSIVE_ITAG]
+    if (!prog) return res.status(422).json({ error: 'Tidak ada format H.264 yang tersedia' })
+    const buf = await fetchStreamFast(prog.url)
+    res.setHeader('Content-Type', 'video/mp4')
+    res.setHeader('Content-Length', String(buf.length))
+    res.setHeader('Content-Disposition', disposition)
+    res.end(buf)
+    return
+  }
 
   let tmp
   try {
@@ -58,7 +90,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader('Content-Type', 'video/mp4')
-    res.setHeader('Content-Disposition', `attachment; filename="${safeTitle(r.title)}.mp4"`)
+    res.setHeader('Content-Disposition', disposition)
 
     const args = [
       '-hide_banner', '-loglevel', 'error',
@@ -67,7 +99,7 @@ export default async function handler(req, res) {
       '-movflags', 'frag_keyframe+empty_moov+faststart',
       '-f', 'mp4', 'pipe:1',
     ]
-    const ff = spawn(ffmpegPath, args)
+    const ff = spawn(ffBin, args)
     ff.stdout.pipe(res)
 
     ff.on('error', () => { if (!res.headersSent) res.status(500).end(); else res.end() })
