@@ -31,11 +31,42 @@ app.get('/api/tiktok/resolve', async (req, res) => {
     return res.status(400).json({ error: 'URL TikTok tidak valid' })
   }
 
+  // Pecahkan link pendek agar /photo/ terdeteksi, lalu resolve via library.
   const canonical = await canonicalTikTokUrl(url)
-  let r = await resolveTikTokLibrary(canonical)
+
+  // Jalankan dua sumber paralel: library (v3) + all-in-one (metadata).
+  // all-in-one dipakai untuk MEMVALIDASI tipe: kalau di sana ada media
+  // image berarti post ini slideshow — library kadang salah mengembalikan
+  // video untuk slide di beberapa kondisi jaringan.
+  const [lib, aio] = await Promise.all([
+    resolveTikTokLibrary(canonical),
+    getYouTubeStreams(url).catch(() => null),
+  ])
+  const aioMedias = Array.isArray(aio?.medias) ? aio.medias : []
+  const aioImages = aioMedias.filter((m) => m.type === 'image').map((m) => m.url).filter(Boolean)
+  const aioAudio = (aioMedias.find((m) => m.type === 'audio') || {}).url || null
+
+  let r = lib
   if (r && !r.music) {
-    r.music = await resolveTikTokMusicV2(canonical)
+    r.music = await resolveTikTokMusicV2(canonical).catch(() => null)
   }
+
+  // Post terbukti slideshow (all-in-one melihat gambar) → pakai foto.
+  if (aioImages.length) {
+    res.json({
+      type: 'image',
+      title: r?.title || aio?.title || null,
+      author: r?.author || null,
+      avatar: r?.avatar || null,
+      thumbnail: aioImages[0],
+      videos: [],
+      images: aioImages,
+      music: r?.music || aioAudio,
+    })
+    return
+  }
+
+  // Cadangan: resolver tiktokio — HANYA untuk video (tidak dukung foto).
   const looksPhoto = /\/photo\//i.test(canonical)
   if ((!r || (!r.videos?.length && !r.images?.length)) && !looksPhoto) {
     const alt = await resolveTikTok(url)
