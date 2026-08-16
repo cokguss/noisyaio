@@ -82,6 +82,7 @@ export default async function handler(req, res) {
       res.setHeader('Content-Type', 'video/mp4')
       res.setHeader('Content-Disposition', disposition)
 
+      let written = 0
       await new Promise((resolve, reject) => {
         const ff = spawn(ffBin, [
           '-hide_banner', '-loglevel', 'error',
@@ -92,12 +93,12 @@ export default async function handler(req, res) {
           '-f', 'mp4', 'pipe:1',
         ])
         let err = ''
-        ff.stdout.on('data', (c) => res.write(c))
+        ff.stdout.on('data', (c) => { written += c.length; res.write(c) })
         ff.stderr.on('data', (d) => { err += d.toString() })
         ff.on('error', reject)
         ff.on('close', (code) => {
-          if (code === 0) resolve()
-          else reject(new Error(`ffmpeg exit ${code}: ${err.slice(0, 300)}`))
+          if (code === 0 && written > 0) resolve()
+          else reject(new Error(`ffmpeg exit ${code} (${written}B): ${err.slice(0, 200)}`))
         })
       })
 
@@ -123,6 +124,9 @@ export default async function handler(req, res) {
   if (!prog) return res.status(422).json({ error: 'Tidak ada format H.264 yang tersedia' })
   try {
     const buf = await fetchStreamFast(prog.url)
+    if (!buf || buf.length === 0) {
+      throw new Error('Stream sumber kosong')
+    }
     sendBufferStreamed(res, buf, disposition)
   } catch {
     if (!res.headersSent) res.status(502).json({ error: 'Gagal mengunduh stream' })
