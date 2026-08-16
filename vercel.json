@@ -3,6 +3,9 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "outputFileTracingIncludes": {
+    "api/youtube/download.js": ["./node_modules/ffmpeg-static/ffmpeg"]
+  },
   "rewrites": [
     { "source": "/terms", "destination": "/" },
     { "source": "/privacy", "destination": "/" },
@@ -11,10 +14,7 @@
   "functions": {
     "api/youtube/download.js": {
       "maxDuration": 60,
-      "memory": 1769,
-      "outputFileTracingIncludes": {
-        "api/youtube/download.js": ["./node_modules/ffmpeg-static/ffmpeg"]
-      }
+      "memory": 1769
     },
     "api/stream.js": {
       "maxDuration": 60
