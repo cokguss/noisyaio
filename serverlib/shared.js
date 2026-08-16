@@ -5,6 +5,9 @@
  *  - api/*.js          → Vercel serverless functions (deploy)
  */
 
+import TiktokPkg from '@tobyg74/tiktok-api-dl'
+
+const TiktokDL = TiktokPkg.default || TiktokPkg
 const ALLINONE = 'https://api.ikyyxd.my.id/download/all-in-one'
 
 // H.264 (avc1) video-only itags dari terbaik ke terendah — kompatibel
@@ -141,6 +144,65 @@ function safeTitle(name) {
 }
 
 /**
+ * Resolver TikTok utama via library @tobyg74/tiktok-api-dl (v3).
+ * Menangani video (SD H.264 / HD HEVC / watermark) maupun slideshow foto,
+ * lengkap dengan judul, author, thumbnail, dan musik.
+ * Return bentuk ternormalisasi atau null bila gagal.
+ */
+async function resolveTikTokLibrary(url) {
+  try {
+    const r = await TiktokDL.Downloader(url, { version: 'v3' })
+    if (r?.status !== 'success' || !r?.result) return null
+    const d = r.result
+
+    const out = {
+      type: d.type === 'image' ? 'image' : 'video',
+      title: d.desc || null,
+      author: d.author?.nickname || null,
+      avatar: d.author?.avatar || null,
+      thumbnail: null,
+      videos: [],
+      images: Array.isArray(d.images) ? d.images.filter(Boolean) : [],
+      music: null,
+    }
+
+    if (out.type === 'video') {
+      // SD (H.264) dulu — paling kompatibel; lalu HD (HEVC); lalu watermark.
+      if (d.videoSD) out.videos.push({ url: d.videoSD, hd: false, wm: false })
+      if (d.videoHD) out.videos.push({ url: d.videoHD, hd: true, wm: false })
+      if (d.videoWatermark) out.videos.push({ url: d.videoWatermark, hd: false, wm: true })
+    }
+
+    // Musik: coba field v3/v1 (objek/array), lalu v2 sebagai cadangan.
+    const pickMusic = (m) => {
+      if (!m) return null
+      if (typeof m === 'string') return m
+      if (Array.isArray(m?.playUrl) && m.playUrl[0]) return m.playUrl[0]
+      if (typeof m?.playUrl === 'string') return m.playUrl
+      if (typeof m?.play === 'string') return m.play
+      return null
+    }
+    out.music = pickMusic(d.music)
+
+    return out
+  } catch {
+    return null
+  }
+}
+
+// Musik via v2 bila v3 tidak menyertakannya.
+async function resolveTikTokMusicV2(url) {
+  try {
+    const r = await TiktokDL.Downloader(url, { version: 'v2' })
+    const m = r?.result?.music
+    if (Array.isArray(m?.playUrl) && m.playUrl[0]) return m.playUrl[0]
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Resolver TikTok via tiktokio.com (server-side, kompatibel undici/fetch).
  * Hasil unduhan di-host dl.tiktokio.com — proxy CDN milik mereka, tidak
  * memblokir IP datacenter (Vercel), berbeda dengan tikwm.
@@ -195,11 +257,15 @@ const STREAM_ALLOWED_EXACT = new Set([
   'ssscdn.io',         // Facebook
   'tikwm.com',         // TikTok (jalur lama, hanya IP rumahan)
   'indown.io',         // Instagram (proxy foto igv2)
-  'dl.tiktokio.com',   // TikTok (jalur utama, bebas blokir IP)
+  'dl.tiktokio.com',   // TikTok (cadangan)
+  'fastdl.muscdn.app', // TikTok via library tiktok-api-dl (utama)
+  'tikcdn.io',         // TikTok via library v2 (musik)
 ])
 const STREAM_ALLOWED_SUFFIX = [
   '.tikwm.com',          // TikTok video
-  '.tiktokio.com',       // TikTok (resolver utama)
+  '.tiktokio.com',       // TikTok (cadangan)
+  '.muscdn.app',         // TikTok library (fastdl.muscdn.app)
+  '.tikcdn.io',          // TikTok library v2
   '.tiktokcdn.com',      // TikTok CDN (foto slideshow, musik)
   '.tiktokcdn-us.com',   // TikTok CDN (varian AS)
   '.fbcdn.net',          // Instagram video/foto CDN
@@ -233,6 +299,8 @@ export {
   fetchStreamFast,
   getSaveTubeVideo,
   resolveTikTok,
+  resolveTikTokLibrary,
+  resolveTikTokMusicV2,
   safeTitle,
   isStreamAllowedHost,
   STREAM_HOST_HEADERS,

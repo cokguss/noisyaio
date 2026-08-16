@@ -128,40 +128,49 @@ function normalizeAllInOne(r, platform) {
 
 /**
  * Ambil metadata & tautan unduhan TikTok.
- * Video: jalur utama resolver tiktokio (dl.tiktokio.com — bebas blokir
- * IP datacenter); fallback bintangapi → all-in-one (tikwm, IP rumahan).
- * Foto/slideshow: langsung ke all-in-one (gambar di-host CDN tiktokcdn;
- * resolver tiktokio tidak mendukung foto).
+ * Jalur utama: /api/tiktok/resolve (library tiktok-api-dl) — menangani
+ * video (SD H.264 / HD HEVC / watermark), slideshow FOTO per slide, dan
+ * MP3. Cadangan: bintangapi → all-in-one (tikwm; hanya IP rumahan).
  */
 export async function fetchTikTok(url) {
   const isPhoto = /\/photo\//i.test(url)
 
-  // ---- Jalur utama VIDEO: tiktokio → dl.tiktokio.com ----
-  if (!isPhoto) {
-    try {
-      const resolved = await fetchJson(`/api/tiktok/resolve?url=${encodeURIComponent(url.trim())}`)
-      if (resolved?.links?.length) {
-        const downloads = resolved.links.map((l) => {
-          if (l.kind === 'audio') {
-            return { label: 'MP3 · Audio', url: proxyUrl(l.url), kind: 'audio', ext: 'mp3' }
-          }
-          const label = l.hd ? 'MP4 · HD (HEVC)' : l.wm ? 'MP4 · Watermark' : 'MP4 · No watermark'
-          return { label, url: proxyUrl(l.url), hd: !!l.hd, kind: 'video', ext: 'mp4' }
+  try {
+    const r = await fetchJson(`/api/tiktok/resolve?url=${encodeURIComponent(url.trim())}`)
+    if (r?.images?.length || r?.videos?.length) {
+      const downloads = []
+
+      if (r.type === 'image') {
+        r.images.forEach((u, i) => {
+          downloads.push({
+            label: r.images.length > 1 ? `Foto ${i + 1}` : 'Foto',
+            url: proxyUrl(u),
+            kind: 'image',
+            ext: 'jpg',
+          })
         })
-        if (downloads.length) {
-          return {
-            platform: 'tiktok',
-            videoId: null,
-            thumbnail: resolved.thumbnail ?? null,
-            duration: null,
-            author: { name: resolved.title || null, username: null, avatar: null },
-            downloads,
-          }
-        }
+      } else {
+        r.videos.forEach((v) => {
+          const label = v.hd ? 'MP4 · HD (HEVC)' : v.wm ? 'MP4 · Watermark' : 'MP4 · No watermark'
+          downloads.push({ label, url: proxyUrl(v.url), hd: !!v.hd, kind: 'video', ext: 'mp4' })
+        })
       }
-    } catch {
-      /* jatuh ke jalur lama di bawah */
+
+      if (r.music) {
+        downloads.push({ label: 'MP3 · Audio', url: proxyUrl(r.music), kind: 'audio', ext: 'mp3' })
+      }
+
+      return {
+        platform: 'tiktok',
+        videoId: null,
+        thumbnail: r.images?.[0] || r.thumbnail || null,
+        duration: null,
+        author: { name: r.author || r.title || null, username: null, avatar: r.avatar || null },
+        downloads,
+      }
     }
+  } catch {
+    /* jatuh ke jalur lama di bawah */
   }
 
   if (!isPhoto) {
@@ -375,7 +384,11 @@ export async function fetchFacebook(url) {
 export async function downloadFile(url, filename, onProgress, direct = false) {
   // Sebagian CDN (mis. googlevideo untuk YouTube) tidak mengirim CORS,
   // sehingga fetch blob pasti gagal. Untuk itu langsung buka di browser.
-  if (direct) {
+  // PECUALIAN iOS: Safari iPhone/iPad sering gagal menyimpan hasil
+  // navigasi unduhan (file tidak tersimpan / format kacau) — di sana
+  // kita paksa lewat blob agar bisa tersimpan dengan benar.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  if (direct && !isIOS) {
     onProgress?.(-1)
     // URL proxy sendiri (/api/...) mengirim Content-Disposition: attachment,
     // jadi unduh di tab yang sama tanpa membuka tab baru.

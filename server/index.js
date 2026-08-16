@@ -12,6 +12,8 @@ import {
   fetchStreamFast,
   safeTitle,
   resolveTikTok,
+  resolveTikTokLibrary,
+  resolveTikTokMusicV2,
   AAC_ITAG,
   PROGRESSIVE_ITAG,
   isStreamAllowedHost,
@@ -21,14 +23,33 @@ import {
 const app = express()
 const PORT = process.env.PORT || 8787
 
-/** Resolve link TikTok via snaptik → link unduhan snapcdn (bebas blokir IP). */
+/** Resolve link TikTok (video & slideshow) via library tiktok-api-dl. */
 app.get('/api/tiktok/resolve', async (req, res) => {
   const url = String(req.query.url || '')
   if (!/tiktok\.com|douyin\./i.test(url)) {
     return res.status(400).json({ error: 'URL TikTok tidak valid' })
   }
-  const r = await resolveTikTok(url)
-  if (!r || r.links.length === 0) {
+
+  let r = await resolveTikTokLibrary(url)
+  if (r && !r.music) {
+    r.music = await resolveTikTokMusicV2(url)
+  }
+  if (!r || (!r.videos?.length && !r.images?.length)) {
+    const alt = await resolveTikTok(url)
+    if (alt?.links?.length) {
+      r = {
+        type: 'video',
+        title: alt.title,
+        author: null,
+        avatar: null,
+        thumbnail: alt.thumbnail,
+        videos: alt.links.filter((l) => l.kind === 'video'),
+        images: [],
+        music: (alt.links.find((l) => l.kind === 'audio') || {}).url || null,
+      }
+    }
+  }
+  if (!r || (!r.videos?.length && !r.images?.length)) {
     return res.status(502).json({ error: 'Gagal me-resolve video' })
   }
   res.json(r)
