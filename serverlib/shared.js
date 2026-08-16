@@ -196,6 +196,36 @@ async function canonicalTikTokUrl(url) {
 }
 
 /**
+ * Resolver YouTube MP3 via ytmp4.is (ht.flvto.online) — instan tanpa
+ * polling, file di-host CDN 123tokyo.xyz (bukan googlevideo, bebas
+ * blokir IP datacenter). Hanya untuk audio; MP4-nya googlevideo.
+ * Return { downloadUrl, title } atau null.
+ */
+async function resolveYouTubeYtmp4is(url) {
+  try {
+    const m = url.match(/(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|embed|watch|shorts)\/|.*[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
+    const id = m ? m[1] : null
+    if (!id) return null
+
+    const res = await fetch('https://ht.flvto.online/converter', {
+      method: 'POST',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+        'Content-Type': 'application/json',
+        'Origin': 'https://ht.flvto.online',
+        'Referer': `https://ht.flvto.online/button?url=https://www.youtube.com/watch?v=${id}&fileType=mp3`,
+      },
+      body: JSON.stringify({ id, fileType: 'mp3' }),
+    })
+    const data = await res.json()
+    if (!data?.link) return null
+    return { downloadUrl: data.link, title: data.title || null }
+  } catch {
+    return null
+  }
+}
+
+/**
  * Resolver TikTok utama via library @tobyg74/tiktok-api-dl (v3).
  * Menangani video (SD H.264 / HD HEVC / watermark) maupun slideshow foto,
  * lengkap dengan judul, author, thumbnail, dan musik.
@@ -340,6 +370,7 @@ const STREAM_HOST_HEADERS = {
 }
 
 export {
+  resolveYouTubeYtmp4is,
   ALLINONE,
   H264_ITAGS,
   AAC_ITAG,

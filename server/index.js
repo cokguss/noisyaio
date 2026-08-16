@@ -12,6 +12,7 @@ import {
   fetchStreamFast,
   safeTitle,
   resolveYouTubeConvert1s,
+  resolveYouTubeYtmp4is,
   resolveTikTok,
   canonicalTikTokUrl,
   resolveTikTokLibrary,
@@ -124,8 +125,22 @@ app.get('/api/youtube/download', async (req, res) => {
     return res.status(400).json({ error: 'URL YouTube tidak valid' })
   }
 
-  // ---- MP3: konversi convert1s (audio 128k). ----
+  // ---- MP3: ytmp4is (instan) -> convert1s (cadangan). ----
   if (String(req.query.format || '') === 'mp3') {
+    const y1 = await resolveYouTubeYtmp4is(url)
+    if (y1?.downloadUrl) {
+      const st = await fetch(y1.downloadUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      if (st.ok) {
+        const buf = Buffer.from(await st.arrayBuffer())
+        if (buf.length > 1000) {
+          res.setHeader('Content-Type', 'audio/mpeg')
+          res.setHeader('Content-Length', String(buf.length))
+          res.setHeader('Content-Disposition', `attachment; filename="${safeTitle(y1.title)}.mp3"`)
+          res.end(buf)
+          return
+        }
+      }
+    }
     const c1 = await resolveYouTubeConvert1s(url, { audio: true })
     if (c1?.downloadUrl) {
       const st = await fetch(c1.downloadUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
