@@ -143,6 +143,19 @@ function safeTitle(name) {
     .slice(0, 80) || 'youtube'
 }
 
+/** Pecahkan link pendek vt.tiktok.com menjadi URL kanonik (path /photo/ terlihat). */
+async function canonicalTikTokUrl(url) {
+  try {
+    const r = await fetch(url, {
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36' },
+    })
+    return r.url || url
+  } catch {
+    return url
+  }
+}
+
 /**
  * Resolver TikTok utama via library @tobyg74/tiktok-api-dl (v3).
  * Menangani video (SD H.264 / HD HEVC / watermark) maupun slideshow foto,
@@ -299,6 +312,7 @@ export {
   fetchStreamFast,
   getSaveTubeVideo,
   resolveTikTok,
+  canonicalTikTokUrl,
   resolveTikTokLibrary,
   resolveTikTokMusicV2,
   safeTitle,

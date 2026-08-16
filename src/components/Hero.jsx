@@ -94,10 +94,15 @@ export default function Hero() {
       : file.kind === 'image' ? `foto-${index + 1}`
       : file.hd ? 'hd' : 'video'
     const filename = `${base}-${suffix}.${file.ext}`
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
     try {
-      await downloadFile(file.url, filename, (ratio) => {
+      const ok = await downloadFile(file.url, filename, (ratio) => {
         setProgress(ratio < 0 ? -1 : Math.round(ratio * 100))
       }, !!file.direct)
+      // Di iOS hasil unduhan masuk app Files, bukan galeri — beri petunjuk.
+      if (isIOS && ok) {
+        setError(t.hero.errors.iosSaved)
+      }
     } catch (err) {
       if (err?.code === 'BAD_FILE') {
         setError(t.hero.errors.expired)

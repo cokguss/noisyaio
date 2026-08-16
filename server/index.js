@@ -12,6 +12,7 @@ import {
   fetchStreamFast,
   safeTitle,
   resolveTikTok,
+  canonicalTikTokUrl,
   resolveTikTokLibrary,
   resolveTikTokMusicV2,
   AAC_ITAG,
@@ -30,11 +31,13 @@ app.get('/api/tiktok/resolve', async (req, res) => {
     return res.status(400).json({ error: 'URL TikTok tidak valid' })
   }
 
-  let r = await resolveTikTokLibrary(url)
+  const canonical = await canonicalTikTokUrl(url)
+  let r = await resolveTikTokLibrary(canonical)
   if (r && !r.music) {
-    r.music = await resolveTikTokMusicV2(url)
+    r.music = await resolveTikTokMusicV2(canonical)
   }
-  if (!r || (!r.videos?.length && !r.images?.length)) {
+  const looksPhoto = /\/photo\//i.test(canonical)
+  if ((!r || (!r.videos?.length && !r.images?.length)) && !looksPhoto) {
     const alt = await resolveTikTok(url)
     if (alt?.links?.length) {
       r = {

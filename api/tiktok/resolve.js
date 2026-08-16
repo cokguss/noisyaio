@@ -2,6 +2,7 @@ import {
   resolveTikTokLibrary,
   resolveTikTokMusicV2,
   resolveTikTok,
+  canonicalTikTokUrl,
 } from '../../serverlib/shared.js'
 
 /**
@@ -15,15 +16,19 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'URL TikTok tidak valid' })
   }
 
-  let r = await resolveTikTokLibrary(url)
+  // Pecahkan link pendek agar /photo/ terdeteksi, lalu resolve via library.
+  const canonical = await canonicalTikTokUrl(url)
+  let r = await resolveTikTokLibrary(canonical)
 
   // Lengkapi musik via v2 bila v3 tidak menyertakannya.
   if (r && !r.music) {
-    r.music = await resolveTikTokMusicV2(url)
+    r.music = await resolveTikTokMusicV2(canonical)
   }
 
-  // Cadangan: resolver tiktokio (hanya video).
-  if (!r || (!r.videos?.length && !r.images?.length)) {
+  // Cadangan: resolver tiktokio — HANYA untuk video, karena tiktokio
+  // salah mengira slideshow foto sebagai video (tidak mendukung foto).
+  const looksPhoto = /\/photo\//i.test(canonical)
+  if ((!r || (!r.videos?.length && !r.images?.length)) && !looksPhoto) {
     const alt = await resolveTikTok(url)
     if (alt?.links?.length) {
       r = {
