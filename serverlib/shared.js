@@ -113,6 +113,24 @@ async function fetchStreamFast(url, chunkSize = 2 * 1024 * 1024, concurrency = 6
   return Buffer.concat(buffers)
 }
 
+/**
+ * Ambil URL video muxed (video+audio) dari savetube via endpoint ytmp4.
+ * Savetube menarik video lewat server mereka sendiri, sehingga tidak
+ * terkena pembatasan IP googlevideo terhadap jaringan datacenter
+ * (mis. Vercel/AWS). Catatan: hasilnya codec AV1.
+ */
+async function getSaveTubeVideo(url) {
+  try {
+    const res = await fetch(`https://api.ikyyxd.my.id/download/ytmp4?q=${encodeURIComponent(url)}`)
+    if (!res.ok) return null
+    const json = await res.json()
+    if (!json?.status) return null
+    return json?.result?.VideoUrl?.url || null
+  } catch {
+    return null
+  }
+}
+
 /** Nama file aman dari judul video. */
 function safeTitle(name) {
   return (name || 'youtube')
@@ -142,6 +160,7 @@ export {
   videoChoices,
   getYouTubeStreams,
   fetchStreamFast,
+  getSaveTubeVideo,
   safeTitle,
   STREAM_ALLOWED_HOSTS,
   STREAM_HOST_HEADERS,

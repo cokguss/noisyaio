@@ -9,6 +9,7 @@ import {
   videoChoices,
   getYouTubeStreams,
   fetchStreamFast,
+  getSaveTubeVideo,
   safeTitle,
   AAC_ITAG,
   PROGRESSIVE_ITAG,
@@ -120,16 +121,35 @@ export default async function handler(req, res) {
     if (tmp) rm(tmp, { recursive: true, force: true }).catch(() => {})
   }
 
-  // ---- Fallback: progressive itag 18 (H.264+AAC 360p), streamed. ----
-  if (!prog) return res.status(422).json({ error: 'Tidak ada format H.264 yang tersedia' })
-  try {
-    const buf = await fetchStreamFast(prog.url)
-    if (!buf || buf.length === 0) {
-      throw new Error('Stream sumber kosong')
+  // ---- Fallback 1: progressive itag 18 (H.264+AAC 360p), streamed. ----
+  if (prog) {
+    try {
+      const buf = await fetchStreamFast(prog.url)
+      if (buf && buf.length > 0) {
+        return sendBufferStreamed(res, buf, disposition)
+      }
+    } catch {
+      /* lanjut ke fallback savetube */
     }
-    sendBufferStreamed(res, buf, disposition)
-  } catch {
-    if (!res.headersSent) res.status(502).json({ error: 'Gagal mengunduh stream' })
-    else res.end()
   }
+
+  // ---- Fallback 2: savetube (server mereka menarik video; bebas blokir
+  //      IP googlevideo). Hasil muxed video+audio, codec AV1. ----
+  const stUrl = await getSaveTubeVideo(url)
+  if (stUrl) {
+    try {
+      const st = await fetch(stUrl)
+      if (st.ok) {
+        const buf = Buffer.from(await st.arrayBuffer())
+        if (buf.length > 0) {
+          return sendBufferStreamed(res, buf, disposition)
+        }
+      }
+    } catch {
+      /* lanjut ke error */
+    }
+  }
+
+  if (!res.headersSent) res.status(502).json({ error: 'Gagal mengunduh stream' })
+  else res.end()
 }

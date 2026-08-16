@@ -9,7 +9,7 @@ import {
   videoChoices,
   getYouTubeStreams,
   fetchStreamFast,
-  itagOf,
+  getSaveTubeVideo,
   AAC_ITAG,
   PROGRESSIVE_ITAG,
 } from '../../serverlib/shared.js'
@@ -25,16 +25,33 @@ function findFfmpeg() {
 
 const ms = (t) => `${Math.round(t)}ms`
 
+/** Baca maksimal maxBytes dari body, lalu batalkan; laporkan byte terbaca. */
+async function readSome(res, maxBytes) {
+  try {
+    const reader = res.body.getReader()
+    let got = 0
+    while (got < maxBytes) {
+      const { done, value } = await reader.read()
+      if (done) break
+      got += value.length
+      if (got >= maxBytes) await reader.cancel().catch(() => {})
+    }
+    return got
+  } catch (e) {
+    return -1
+  }
+}
+
 /**
  * GET /api/youtube/debug?url=...
- * Diagnostik: jalankan langkah-langkah unduhan satu per satu dan laporkan
- * hasil + durasinya, untuk menemukan titik gagal di lingkungan serverless.
+ * Diagnostik v2: uji berbagai strategi pengambilan video dari serverless
+ * (googlevideo menolak/mengosongkan respons untuk IP datacenter) plus
+ * sumber alternatif savetube.
  */
 export default async function handler(req, res) {
   const url = String(req.query.url || 'https://youtu.be/FIqdZatWQUY')
   const out = { url, region: process.env.VERCEL_REGION || null, steps: {} }
 
-  // 1. Metadata
   let t = Date.now()
   const r = await getYouTubeStreams(url)
   out.steps.metadata = {
@@ -46,55 +63,74 @@ export default async function handler(req, res) {
   if (!r) return res.json(out)
 
   const byItag = byItagMap(r.medias)
-  out.steps.itags = {
-    h264: videoChoices(byItag).map((c) => `${c.itag}/${c.height}p`),
-    audio140: !!byItag[AAC_ITAG],
-    progressive18: !!byItag[PROGRESSIVE_ITAG],
-  }
+  const v = byItag['136'] || byItag['135'] || byItag['134'] || byItag['18']
+  if (!v) return res.json(out)
 
-  // 2. Binary ffmpeg
-  out.steps.ffmpeg = {
-    path: ffmpegPath,
-    exists: existsSync(ffmpegPath || ''),
-    found: findFfmpeg(),
-  }
-
-  // 3. Unduh video 720p per-potongan
-  const v = byItag['136'] || byItag['135'] || byItag['134']
-  if (v) {
+  // --- Strategi A: GET polos tanpa Range ---
+  try {
     t = Date.now()
-    try {
-      const buf = await fetchStreamFast(v.url)
-      out.steps.fetchVideo = { ok: true, ms: ms(Date.now() - t), bytes: buf.length, headHex: buf.subarray(4, 8).toString() }
-    } catch (e) {
-      out.steps.fetchVideo = { ok: false, ms: ms(Date.now() - t), error: String(e.message).slice(0, 200) }
+    const a = await fetch(v.url)
+    out.steps.plainGet = {
+      status: a.status,
+      contentType: a.headers.get('content-type'),
+      contentLength: a.headers.get('content-length'),
+      bytes: await readSome(a, 1024 * 1024),
+      ms: ms(Date.now() - t),
     }
+  } catch (e) {
+    out.steps.plainGet = { error: String(e.message).slice(0, 150) }
   }
 
-  // 4. Coba remux kecil (1 detik pertama) bila ffmpeg ada
-  const ff = findFfmpeg()
-  if (ff && out.steps.fetchVideo?.ok) {
+  // --- Strategi B: Range + header browser ---
+  try {
     t = Date.now()
-    let tmp
-    try {
-      tmp = await mkdtemp(join(tmpdir(), 'dbg-'))
-      const vPath = join(tmp, 'v.mp4')
-      await writeFile(vPath, (await fetchStreamFast(v.url)).subarray(0, 512 * 1024))
-      const outPath = join(tmp, 'o.mp4')
-      await new Promise((resolve, reject) => {
-        const p = spawn(ff, ['-hide_banner', '-loglevel', 'error', '-i', vPath, '-t', '1', '-c', 'copy', '-y', outPath])
-        let e = ''
-        p.stderr.on('data', (d) => { e += d })
-        p.on('error', reject)
-        p.on('close', (c) => (c === 0 ? resolve() : reject(new Error(`exit ${c}: ${e.slice(0, 150)}`))))
-      })
-      out.steps.remux = { ok: true, ms: ms(Date.now() - t) }
-    } catch (e) {
-      out.steps.remux = { ok: false, ms: ms(Date.now() - t), error: String(e.message).slice(0, 200) }
-    } finally {
-      if (tmp) await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    const b = await fetch(v.url, {
+      headers: {
+        Range: 'bytes=0-999999',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+        Referer: 'https://www.youtube.com/',
+        Origin: 'https://www.youtube.com',
+      },
+    })
+    out.steps.rangeBrowser = {
+      status: b.status,
+      contentRange: b.headers.get('content-range'),
+      bytes: await readSome(b, 1024 * 1024),
+      ms: ms(Date.now() - t),
     }
+  } catch (e) {
+    out.steps.rangeBrowser = { error: String(e.message).slice(0, 150) }
   }
 
+  // --- Strategi C: fetchStreamFast (chunked paralel, kode produksi) ---
+  try {
+    t = Date.now()
+    const buf = await fetchStreamFast(v.url)
+    out.steps.chunked = { bytes: buf.length, ms: ms(Date.now() - t) }
+  } catch (e) {
+    out.steps.chunked = { error: String(e.message).slice(0, 150) }
+  }
+
+  // --- Strategi D: savetube (server pihak ketiga menarik video) ---
+  try {
+    t = Date.now()
+    const stUrl = await getSaveTubeVideo(url)
+    if (!stUrl) {
+      out.steps.savetube = { ok: false, error: 'tidak mendapat URL' }
+    } else {
+      const d = await fetch(stUrl)
+      out.steps.savetube = {
+        ok: d.ok,
+        status: d.status,
+        contentLength: d.headers.get('content-length'),
+        bytes: await readSome(d, 1024 * 1024),
+        ms: ms(Date.now() - t),
+      }
+    }
+  } catch (e) {
+    out.steps.savetube = { error: String(e.message).slice(0, 150) }
+  }
+
+  out.steps.ffmpeg = { found: findFfmpeg() }
   res.json(out)
 }
