@@ -94,7 +94,7 @@ function normalizeAllInOne(r, platform) {
   videos.forEach((m) => {
     downloads.push({
       label: qualityLabel[m.quality] || 'MP4 · Video',
-      url: proxyUrl(m.url),
+      url: proxyUrl(m.url), raw: m.url,
       hd: m.quality === 'hd_no_watermark',
       kind: 'video',
       ext: 'mp4',
@@ -103,13 +103,13 @@ function normalizeAllInOne(r, platform) {
   images.forEach((m, i) => {
     downloads.push({
       label: images.length > 1 ? `Foto ${i + 1}` : 'Foto',
-      url: proxyUrl(m.url),
+      url: proxyUrl(m.url), raw: m.url,
       kind: 'image',
       ext: (m.extension === 'png' || m.extension === 'webp') ? m.extension : 'jpg',
     })
   })
   audios.forEach((m) => {
-    downloads.push({ label: 'MP3 · Audio', url: proxyUrl(m.url), kind: 'audio', ext: 'mp3' })
+    downloads.push({ label: 'MP3 · Audio', url: proxyUrl(m.url), raw: m.url, kind: 'audio', ext: 'mp3' })
   })
 
   return {
@@ -144,7 +144,7 @@ export async function fetchTikTok(url) {
         r.images.forEach((u, i) => {
           downloads.push({
             label: r.images.length > 1 ? `Foto ${i + 1}` : 'Foto',
-            url: proxyUrl(u),
+            url: proxyUrl(u), raw: u,
             kind: 'image',
             ext: 'jpg',
           })
@@ -152,12 +152,12 @@ export async function fetchTikTok(url) {
       } else {
         r.videos.forEach((v) => {
           const label = v.hd ? 'MP4 · HD (HEVC)' : v.wm ? 'MP4 · Watermark' : 'MP4 · No watermark'
-          downloads.push({ label, url: proxyUrl(v.url), hd: !!v.hd, kind: 'video', ext: 'mp4' })
+          downloads.push({ label, url: proxyUrl(v.url), raw: v.url, hd: !!v.hd, kind: 'video', ext: 'mp4' })
         })
       }
 
       if (r.music) {
-        downloads.push({ label: 'MP3 · Audio', url: proxyUrl(r.music), kind: 'audio', ext: 'mp3' })
+        downloads.push({ label: 'MP3 · Audio', url: proxyUrl(r.music), raw: r.music, kind: 'audio', ext: 'mp3' })
       }
 
       return {
@@ -192,9 +192,9 @@ export async function fetchTikTok(url) {
             avatar: d.user?.avatar ?? null,
           },
           downloads: [
-            noWm.url && { label: 'MP4 · No watermark', url: proxyUrl(noWm.url), sizeMb: noWm.size_mb, hd: !!noWm.hd, kind: 'video', ext: 'mp4' },
-            wm.url && { label: 'MP4 · Watermark', url: proxyUrl(wm.url), sizeMb: wm.size_mb, hd: !!wm.hd, kind: 'video', ext: 'mp4' },
-            d.audio_url && { label: 'MP3 · Audio', url: proxyUrl(d.audio_url), kind: 'audio', ext: 'mp3' },
+            noWm.url && { label: 'MP4 · No watermark', url: proxyUrl(noWm.url), raw: noWm.url, sizeMb: noWm.size_mb, hd: !!noWm.hd, kind: 'video', ext: 'mp4' },
+            wm.url && { label: 'MP4 · Watermark', url: proxyUrl(wm.url), raw: wm.url, sizeMb: wm.size_mb, hd: !!wm.hd, kind: 'video', ext: 'mp4' },
+            d.audio_url && { label: 'MP3 · Audio', url: proxyUrl(d.audio_url), raw: d.audio_url, kind: 'audio', ext: 'mp3' },
           ].filter(Boolean),
         }
       }
@@ -232,7 +232,7 @@ export async function fetchInstagram(url) {
     const base = kind === 'image' ? 'Foto' : 'MP4 · Video'
     return {
       label: multiple ? `${base} ${i + 1}` : base,
-      url: proxyUrl(item.url),
+      url: proxyUrl(item.url), raw: item.url,
       sizeMb: parseSizeMb(item.size),
       kind,
       ext,
@@ -264,6 +264,21 @@ export async function fetchYouTube(url) {
   }
 
   const downloads = []
+
+  // 360p H.264 langsung dari googlevideo perangkat pengguna: IP rumahan
+  // selalu diizinkan Google, file progresif (video+audio) kompatibel semua
+  // perangkat termasuk iPhone/Android — jadi jangkar kalau konversi server
+  // gagal/AV1.
+  if (info.progressiveUrl) {
+    downloads.push({
+      label: 'MP4 · 360p (semua perangkat)',
+      url: info.progressiveUrl,
+      kind: 'video',
+      ext: 'mp4',
+      direct: true,
+    })
+  }
+
   const choices = info.videoChoices?.length
     ? info.videoChoices
     : [{ itag: '18', height: 360 }]
