@@ -296,6 +296,26 @@ export async function fetchYouTube(url) {
     })
   })
 
+  // Audio langsung dari googlevideo perangkat pengguna (IP rumahan
+  // diizinkan; server Vercel diblokir). Cadangan: konversi server.
+  if (info.audioUrl) {
+    downloads.push({
+      label: 'Audio · M4A (semua perangkat)',
+      url: info.audioUrl,
+      kind: 'audio',
+      ext: 'm4a',
+      direct: true,
+    })
+  } else {
+    downloads.push({
+      label: 'MP3 · Audio (128kbps)',
+      url: `/api/youtube/download?url=${q}&format=mp3`,
+      kind: 'audio',
+      ext: 'mp3',
+      direct: true,
+    })
+  }
+
   return {
     platform: 'youtube',
     videoId: null,

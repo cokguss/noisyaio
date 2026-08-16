@@ -20,6 +20,7 @@ export default async function handler(req, res) {
     hasAudioItag: Boolean(byItag[AAC_ITAG]),
     hasProgressive: Boolean(byItag[PROGRESSIVE_ITAG]),
     progressiveUrl: byItag[PROGRESSIVE_ITAG]?.url || null,
+    audioUrl: byItag[AAC_ITAG]?.url || null,
     videoChoices: videoChoices(byItag),
   })
 }
