@@ -140,12 +140,62 @@ function safeTitle(name) {
     .slice(0, 80) || 'youtube'
 }
 
+/**
+ * Resolver TikTok via tiktokio.com (server-side, kompatibel undici/fetch).
+ * Hasil unduhan di-host dl.tiktokio.com — proxy CDN milik mereka, tidak
+ * memblokir IP datacenter (Vercel), berbeda dengan tikwm.
+ * Return: { links: [{url, kind, hd, wm}], thumbnail, title } atau null.
+ */
+async function resolveTikTok(url) {
+  try {
+    const home = await fetch('https://tiktokio.com/', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+    })
+    const cookie = home.headers.get('set-cookie') || ''
+
+    const res = await fetch('https://tiktokio.com/api/v1/tk/html', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': cookie,
+        'Origin': 'https://tiktokio.com',
+        'Referer': 'https://tiktokio.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      body: JSON.stringify({ vid: url, prefix: 'tiktokio.com' }),
+    })
+    if (!res.ok) return null
+    const html = await res.text()
+
+    const hrefs = [...html.matchAll(/href="(https:\/\/dl\.tiktokio\.com[^"]+)"/g)].map((m) => m[1])
+    if (hrefs.length < 2) return null
+
+    // Urutan tetap dari template tiktokio: [0] SD no-wm (H.264),
+    // [1] HD (HEVC), [2] watermark (H.264), [3] musik MP3 (bila ada).
+    // SD diletakkan duluan karena H.264 kompatibel semua pemutar.
+    const links = [
+      hrefs[0] && { url: hrefs[0], kind: 'video', hd: false, wm: false },
+      hrefs[1] && { url: hrefs[1], kind: 'video', hd: true, wm: false },
+      hrefs[2] && { url: hrefs[2], kind: 'video', hd: false, wm: true },
+      hrefs[3] && { url: hrefs[3], kind: 'audio', hd: false, wm: false },
+    ].filter(Boolean)
+
+    const title = (html.match(/<h3[^>]*>([^<]{5,120})</) || [])[1]?.trim() || null
+    const img = (html.match(/<img[^>]+src="(https?:\/\/p[^"]+)"/) || [])[1] || null
+
+    return { links, thumbnail: img, title }
+  } catch {
+    return null
+  }
+}
+
 /** Host yang boleh di-stream via /api/stream + header wajib per host. */
 const STREAM_ALLOWED_EXACT = new Set([
-  'dl.snapcdn.app',   // Twitter
-  'ssscdn.io',        // Facebook
-  'tikwm.com',        // TikTok video (host polos tanpa subdomain)
-  'indown.io',        // Instagram (proxy foto igv2)
+  'dl.snapcdn.app',    // Twitter
+  'ssscdn.io',         // Facebook
+  'tikwm.com',         // TikTok (jalur lama, hanya IP rumahan)
+  'indown.io',         // Instagram (proxy foto igv2)
+  'dl.tiktokio.com',   // TikTok (jalur utama, bebas blokir IP)
 ])
 const STREAM_ALLOWED_SUFFIX = [
   '.tikwm.com',          // TikTok video
@@ -179,6 +229,7 @@ export {
   getYouTubeStreams,
   fetchStreamFast,
   getSaveTubeVideo,
+  resolveTikTok,
   safeTitle,
   isStreamAllowedHost,
   STREAM_HOST_HEADERS,

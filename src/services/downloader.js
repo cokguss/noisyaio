@@ -128,10 +128,37 @@ function normalizeAllInOne(r, platform) {
 
 /**
  * Ambil metadata & tautan unduhan TikTok.
- * Video pakai bintangapi (stabil + info ukuran). Foto/slideshow tidak
- * didukung bintangapi, jadi dialihkan ke endpoint all-in-one.
+ * Jalur utama: resolver snapcdn (server-side, bebas blokir IP datacenter,
+ * file H.264). Bila gagal, fallback ke bintangapi → all-in-one (tikwm;
+ * hanya berfungsi dari IP rumahan).
  */
 export async function fetchTikTok(url) {
+  // ---- Jalur utama: tiktokio → dl.tiktokio.com (bebas blokir IP) ----
+  try {
+    const resolved = await fetchJson(`/api/tiktok/resolve?url=${encodeURIComponent(url.trim())}`)
+    if (resolved?.links?.length) {
+      const downloads = resolved.links.map((l) => {
+        if (l.kind === 'audio') {
+          return { label: 'MP3 · Audio', url: proxyUrl(l.url), kind: 'audio', ext: 'mp3' }
+        }
+        const label = l.hd ? 'MP4 · HD (HEVC)' : l.wm ? 'MP4 · Watermark' : 'MP4 · No watermark'
+        return { label, url: proxyUrl(l.url), hd: !!l.hd, kind: 'video', ext: 'mp4' }
+      })
+      if (downloads.length) {
+        return {
+          platform: 'tiktok',
+          videoId: null,
+          thumbnail: resolved.thumbnail ?? null,
+          duration: null,
+          author: { name: resolved.title || null, username: null, avatar: null },
+          downloads,
+        }
+      }
+    }
+  } catch {
+    /* jatuh ke jalur lama di bawah */
+  }
+
   const isPhoto = /\/photo\//i.test(url)
 
   if (!isPhoto) {

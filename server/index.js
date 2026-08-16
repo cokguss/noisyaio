@@ -11,6 +11,7 @@ import {
   getYouTubeStreams,
   fetchStreamFast,
   safeTitle,
+  resolveTikTok,
   AAC_ITAG,
   PROGRESSIVE_ITAG,
   isStreamAllowedHost,
@@ -19,6 +20,19 @@ import {
 
 const app = express()
 const PORT = process.env.PORT || 8787
+
+/** Resolve link TikTok via snaptik → link unduhan snapcdn (bebas blokir IP). */
+app.get('/api/tiktok/resolve', async (req, res) => {
+  const url = String(req.query.url || '')
+  if (!/tiktok\.com|douyin\./i.test(url)) {
+    return res.status(400).json({ error: 'URL TikTok tidak valid' })
+  }
+  const r = await resolveTikTok(url)
+  if (!r || r.links.length === 0) {
+    return res.status(502).json({ error: 'Gagal me-resolve video' })
+  }
+  res.json(r)
+})
 
 /** Metadata + daftar itag yang tersedia untuk sebuah video. */
 app.get('/api/youtube/info', async (req, res) => {
