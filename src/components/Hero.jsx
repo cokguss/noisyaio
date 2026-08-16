@@ -193,45 +193,47 @@ export default function Hero() {
               exit={{ opacity: 0, y: 10 }}
               transition={{ duration: 0.4 }}
             >
-              {result.thumbnail ? (
-                <div className="result-thumb">
-                  <img
-                    src={result.thumbnail}
-                    alt=""
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }}
-                  />
-                </div>
-              ) : (
-                (() => {
-                  const preview = result.downloads.find((d) => d.kind === 'video' || d.kind === 'image')
-                  if (!preview) return null
+              {(() => {
+                // Prioritas preview: video yang bisa diputar (lewat proxy,
+                // mode preview tanpa header attachment) dengan thumbnail
+                // sebagai poster; kalau tidak ada, gambar thumbnail; kalau
+                // tetap tidak ada, gambar/foto pertama dari daftar unduhan.
+                const videoFile = result.downloads.find((d) => d.kind === 'video')
+                const imageFile = result.downloads.find((d) => d.kind === 'image')
+                const previewUrl = (u) => (u && u.startsWith('/api/stream?') ? `${u}&preview=1` : u)
+
+                if (videoFile) {
                   return (
                     <div className="result-thumb">
-                      {preview.kind === 'video' ? (
-                        <video
-                          src={preview.url}
-                          muted
-                          loop
-                          playsInline
-                          autoPlay
-                          preload="metadata"
-                          onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }}
-                        />
-                      ) : (
-                        <img
-                          src={preview.url}
-                          alt=""
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }}
-                        />
-                      )}
+                      <video
+                        src={previewUrl(videoFile.url)}
+                        poster={result.thumbnail || undefined}
+                        muted
+                        loop
+                        playsInline
+                        autoPlay
+                        preload="metadata"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }}
+                      />
                     </div>
                   )
-                })()
-              )}
+                }
+                if (result.thumbnail || imageFile) {
+                  return (
+                    <div className="result-thumb">
+                      <img
+                        src={result.thumbnail || previewUrl(imageFile.url)}
+                        alt=""
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }}
+                      />
+                    </div>
+                  )
+                }
+                return null
+              })()}
               <div className="result-body">
                 {(result.author.avatar || result.author.name || result.author.username) && (
                   <div className="result-author">

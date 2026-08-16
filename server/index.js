@@ -169,7 +169,10 @@ app.get('/api/stream', async (req, res) => {
     const name = String(req.query.filename || 'download').replace(/[^\w.\-()]/g, '_')
     res.setHeader('Content-Type', type)
     if (len) res.setHeader('Content-Length', len)
-    res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
+    // Mode preview (diputar di kartu hasil): inline tanpa paksa-unduh.
+    if (req.query.preview !== '1') {
+      res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
+    }
     res.setHeader('Cache-Control', 'no-store')
 
     const nodeStream = Readable.fromWeb(upstream.body)
