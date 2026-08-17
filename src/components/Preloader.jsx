@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import './Preloader.css'
 
-const FADE_MS = 650
-const GLITCH_MS = 700
-
 /**
  * Layar pembuka bergaya glitch (mirip Noisy Uploader): label "MEMUAT",
  * teks brand ber-efek glitch, progress bar gradient, dan penghitung persen.
- * Setelah 100% panel memudar, lalu situs "pecah sinyal" sebentar
- * (kelas .is-booting-glitch di <html> + overlay scanline) sebelum tenang.
+ * Menghilang mulus setelah mencapai 100%.
  */
 export default function Preloader() {
   // Hanya tampil sekali per sesi tab (tidak muncul lagi saat pindah ke
@@ -17,15 +13,13 @@ export default function Preloader() {
   const [progress, setProgress] = useState(0)
   const [gone, setGone] = useState(!!seen)
   const [fade, setFade] = useState(false)
-  const [glitch, setGlitch] = useState(false)
   const raf = useRef(0)
-  const timers = useRef([])
+  const timer = useRef(0)
 
   useEffect(() => {
     if (seen) return
     const start = performance.now()
     const DURATION = 1900
-    timers.current = []
 
     const tick = (now) => {
       const t = Math.min(1, (now - start) / DURATION)
@@ -36,33 +30,31 @@ export default function Preloader() {
         raf.current = requestAnimationFrame(tick)
         return
       }
+      // Progress penuh → mulai fade DAN langsung lepas kunci scroll.
+      // Penting untuk mobile: jangan menunggu preloader ter-unmount (650ms
+      // kemudian) untuk membuka scroll — begitu bar penuh, halaman harus
+      // bisa langsung digulir. Menahannya membuat halaman terasa "stuck"
+      // sesaat. Selama fade, preloader diberi pointer-events:none (di CSS)
+      // supaya sentuhan tembus ke konten di bawahnya.
       setFade(true)
-      timers.current.push(setTimeout(() => {
+      document.body.style.overflow = ''
+      timer.current = setTimeout(() => {
         setGone(true)
-        setGlitch(true)
-        document.documentElement.classList.add('is-booting-glitch')
         try { sessionStorage.setItem('noisy-preloaded', '1') } catch { /* ignore */ }
-      }, FADE_MS))
-      timers.current.push(setTimeout(() => {
-        setGlitch(false)
-        document.documentElement.classList.remove('is-booting-glitch')
-        document.body.style.overflow = ''
-      }, FADE_MS + GLITCH_MS))
+      }, 650)
     }
     raf.current = requestAnimationFrame(tick)
 
-    // Kunci scroll selama preloader + glitch aktif, supaya guncangan
-    // terbaca sebagai satu momen dan halaman tidak ikut bergeser.
+    // Kunci scroll hanya selama preloader tampil penuh.
     document.body.style.overflow = 'hidden'
     return () => {
       cancelAnimationFrame(raf.current)
-      timers.current.forEach(clearTimeout)
+      clearTimeout(timer.current)
       document.body.style.overflow = ''
-      document.documentElement.classList.remove('is-booting-glitch')
     }
   }, [seen])
 
-  if (gone) return glitch ? <div className="boot-glitch" aria-hidden="true" /> : null
+  if (gone) return null
 
   return (
     <div className={`preloader ${fade ? 'is-hidden' : ''}`} aria-hidden="true">

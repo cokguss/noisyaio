@@ -129,12 +129,18 @@
   box-shadow: 0 6px 26px rgba(34, 158, 217, 0.32);
 }
 
+.contact-btn.is-gh {
+  background: linear-gradient(45deg, #24292f, #57606a);
+  box-shadow: 0 6px 26px rgba(36, 41, 47, 0.4);
+}
+
 .contact-btn:hover {
   transform: translateY(-2px);
 }
 
 .contact-btn.is-ig:hover { box-shadow: 0 10px 36px rgba(220, 39, 102, 0.5); }
 .contact-btn.is-tg:hover { box-shadow: 0 10px 36px rgba(34, 158, 217, 0.5); }
+.contact-btn.is-gh:hover { box-shadow: 0 10px 36px rgba(36, 41, 47, 0.6); }
 
 .footer-bottom {
   display: flex;
