@@ -172,7 +172,7 @@ app.get('/api/youtube/download', async (req, res) => {
 
   const byItag = byItagMap(r.medias)
   const ranked = videoChoices(byItag)
-  const pick = ranked.find((x) => x.h <= wantHeight) || ranked[ranked.length - 1]
+  const pick = ranked.find((x) => x.height <= wantHeight) || ranked[ranked.length - 1]
   const audio = byItag[AAC_ITAG]
 
   let tmp

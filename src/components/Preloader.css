@@ -122,7 +122,100 @@
   52% { opacity: 0.85; }
 }
 
+/* ---------- Glitch transisi: sesaat setelah panel preloader hilang ----------
+   Kelas dipasang di <html> selama ~700ms saja lalu dilepas.
+   `.aurora` dikecualikan dari transform: dia `fixed; inset: 0` dengan blob
+   berposisi persen, dan transform pada elemen apa pun menjadikannya
+   containing block baru — latar akan melar setinggi dokumen dan dua blob
+   hilang dari layar. Dia cukup dapat glitch warna (filter tidak mengubah
+   posisi anak absolute-nya).
+   `steps(1, end)` membuat lompatan antar-frame terasa digital, bukan mulus. */
+.is-booting-glitch #root > *:not(.aurora):not(.boot-glitch) {
+  animation: boot-glitch 0.7s steps(1, end) 1;
+  will-change: transform, filter;
+}
+
+.is-booting-glitch .aurora {
+  animation: boot-glitch-bg 0.7s steps(1, end) 1;
+}
+
+@keyframes boot-glitch {
+  0%   { transform: none; filter: none; }
+  5%   { transform: translate3d(-9px, 3px, 0) skewX(-3deg); filter: hue-rotate(-30deg) saturate(2) contrast(1.3); }
+  10%  { transform: none; filter: none; }
+  16%  { transform: translate3d(7px, -3px, 0) skewX(2.5deg); filter: brightness(1.35) contrast(1.4); }
+  21%  { transform: none; filter: none; }
+  30%  { transform: translate3d(-4px, -4px, 0); filter: invert(1) hue-rotate(180deg); }
+  34%  { transform: none; filter: none; }
+  45%  { transform: translate3d(6px, 3px, 0) skewX(-1.5deg); filter: saturate(0.25) brightness(0.85); }
+  50%  { transform: none; filter: none; }
+  62%  { transform: translate3d(-4px, 1px, 0); filter: hue-rotate(25deg) contrast(1.2); }
+  67%  { transform: none; filter: none; }
+  78%  { transform: translate3d(2px, -1px, 0); filter: brightness(1.12); }
+  83%  { transform: none; filter: none; }
+  100% { transform: none; filter: none; }
+}
+
+@keyframes boot-glitch-bg {
+  0%   { filter: none; }
+  5%   { filter: hue-rotate(-40deg) saturate(2.2); }
+  10%  { filter: none; }
+  30%  { filter: invert(1) hue-rotate(180deg); }
+  34%  { filter: none; }
+  45%  { filter: brightness(1.5); }
+  50%  { filter: none; }
+  62%  { filter: hue-rotate(35deg); }
+  67%  { filter: none; }
+  100% { filter: none; }
+}
+
+/* Overlay: scanline + kabut warna + satu "sobekan" horizontal yang berpindah. */
+.boot-glitch {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, rgba(236, 72, 153, 0.14), rgba(34, 211, 238, 0.14));
+  animation: boot-glitch-veil 0.7s steps(1, end) 1 forwards;
+}
+
+.boot-glitch::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.4), rgba(168, 85, 247, 0.22));
+  animation: boot-glitch-tear 0.7s steps(1, end) 1 forwards;
+}
+
+@keyframes boot-glitch-veil {
+  0%   { opacity: 0.9; }
+  10%  { opacity: 0.25; }
+  20%  { opacity: 0.75; }
+  32%  { opacity: 0.1; }
+  46%  { opacity: 0.55; }
+  60%  { opacity: 0.18; }
+  78%  { opacity: 0.32; }
+  100% { opacity: 0; }
+}
+
+@keyframes boot-glitch-tear {
+  0%   { clip-path: inset(14% 0 82% 0); }
+  14%  { clip-path: inset(58% 0 38% 0); }
+  28%  { clip-path: inset(31% 0 66% 0); }
+  42%  { clip-path: inset(72% 0 24% 0); }
+  56%  { clip-path: inset(44% 0 53% 0); }
+  70%  { clip-path: inset(9% 0 88% 0); }
+  84%  { clip-path: inset(63% 0 35% 0); }
+  100% { clip-path: inset(50% 0 50% 0); opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .glitch::before, .glitch::after { animation: none; opacity: 0; }
   .pre-label { animation: none; }
+  .is-booting-glitch #root > *:not(.aurora):not(.boot-glitch) { animation: none; }
+  .is-booting-glitch .aurora { animation: none; }
+  .boot-glitch { display: none; }
 }
